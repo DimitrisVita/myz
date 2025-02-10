@@ -1,0 +1,66 @@
+#include "utils.h"
+
+void print_usage() {
+    printf("Usage: myz {-c|-a|-x|-m|-d|-p|-j|-q} <archive-file> <list-of-files/dirs>\n");
+}
+
+int parse_arguments(int argc, char *argv[], CommandLineArgs *args) {
+    int opt;
+    // Initialize arguments
+    *args = (CommandLineArgs){false, false, false, false, false, false, false, false, NULL, NULL};
+
+    if (argc < 3) {
+        print_usage();
+        return 1;
+    }
+
+    // Parse command line arguments
+    while ((opt = getopt(argc, argv, "caxmdpjq")) != -1) {
+        switch (opt) {
+            case 'c':
+                args->create = true;
+                break;
+            case 'a':
+                args->append = true;
+                break;
+            case 'x':
+                args->export = true;
+                break;
+            case 'm':
+                args->metadata = true;
+                break;
+            case 'd':
+                args->delete = true;
+                break;
+            case 'p':
+                args->print = true;
+                break;
+            case 'q':
+                args->query = true;
+                break;
+            case 'j':
+                args->gzip = true;
+                break;
+            default:
+                print_usage();
+                return 1;
+        }
+    }
+
+    // Check if the archive file is provided
+    if (optind < argc) {
+        args->archiveFile = argv[optind];
+        optind++;
+    } else {
+        print_usage();
+        return 1;
+    }
+
+    // Check if the file path is provided
+    if (optind < argc) {
+        args->filePath = argv[optind];
+        optind++;
+    }
+
+    return 0;
+}

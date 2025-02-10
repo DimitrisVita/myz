@@ -1,13 +1,11 @@
-#ifndef MYZ_H
-#define MYZ_H
+#pragma once
 
-void create_archive(const char *archive_file, char **files_dirs, int num_files_dirs);
-void add_to_archive(const char *archive_file, char **files_dirs, int num_files_dirs);
-void extract_archive(const char *archive_file, char **files_dirs, int num_files_dirs);
-void compress_and_create_archive(const char *archive_file, char **files_dirs, int num_files_dirs);
-void delete_from_archive(const char *archive_file, char **files_dirs, int num_files_dirs);
-void print_metadata(const char *archive_file);
-void query_archive(const char *archive_file, char **files_dirs, int num_files_dirs);
-void print_hierarchy(const char *archive_file);
+#include "common.h"
 
-#endif // MYZ_H
+void create_archive(const char *archiveFile, const char *filePath, bool gzip);
+void append_archive(const char *archiveFile, const char *filePath, bool gzip);
+void extract_archive(const char *archiveFile, const char *filePath);
+void delete_archive(const char *archiveFile, const char *filePath);
+void print_metadata(const char *archiveFile);
+void query_archive(const char *archiveFile, const char *filePath);
+void print_hierarchy(const char *archiveFile);
