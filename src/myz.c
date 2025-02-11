@@ -1,6 +1,7 @@
 #include "myz.h"
 #include "common.h"
 #include "utils.h"
+#include "ADTList.h" // Include ADTList header
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -76,7 +77,7 @@ void free_file_entries(Node *head) {
     }
 }
 
-void process_directory(const char *dir_path, Node **head, int fd, bool gzip) {
+void process_directory(const char *dir_path, List *fileList, int fd, bool gzip) {
     DIR *dir = opendir(dir_path);
     if (!dir) return;
 
@@ -91,7 +92,7 @@ void process_directory(const char *dir_path, Node **head, int fd, bool gzip) {
         if (lstat(full_path, &metadata) == -1) continue;
 
         if (S_ISDIR(metadata.st_mode)) {
-            process_directory(full_path, head, fd, gzip);
+            process_directory(full_path, fileList, fd, gzip);
         } else if (S_ISREG(metadata.st_mode)) {
             int file_fd = open(full_path, O_RDONLY);
             if (file_fd == -1) continue;
@@ -137,20 +138,20 @@ void process_directory(const char *dir_path, Node **head, int fd, bool gzip) {
             close(file_fd);
 
             size_t data_size = lseek(fd, 0, SEEK_CUR) - data_offset;
-            add_file_entry(head, full_path, &metadata, data_offset, data_size, NULL);
+            list_insert_next(fileList, list_last(fileList), strdup(full_path));
         } else if (S_ISLNK(metadata.st_mode)) {
             char link_target[PATH_MAX];
             ssize_t len = readlink(full_path, link_target, sizeof(link_target) - 1);
             if (len != -1) {
                 link_target[len] = '\0';
-                add_file_entry(head, full_path, &metadata, 0, 0, link_target);
+                list_insert_next(fileList, list_last(fileList), strdup(full_path));
             }
         }
     }
     closedir(dir);
 }
 
-void create_archive(const char *archiveFile, const char *filePath, bool gzip) {
+void create_archive(const char *archiveFile, List *fileList, bool gzip) {
     int fd = open(archiveFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd == -1) {
         perror("Failed to create archive file");
@@ -161,80 +162,82 @@ void create_archive(const char *archiveFile, const char *filePath, bool gzip) {
     MyzHeader header = { .magic = "MYZ", .num_entries = 0, .metadata_offset = 0, .flags = gzip ? 1 : 0 };
     write(fd, &header, sizeof(MyzHeader));
 
-    Node *head = NULL;
-    struct stat metadata;
-    if (lstat(filePath, &metadata) == -1) {
-        perror("Failed to stat input file/directory");
-        close(fd);
-        return;
-    }
-
-    if (S_ISDIR(metadata.st_mode)) {
-        process_directory(filePath, &head, fd, gzip);
-    } else if (S_ISREG(metadata.st_mode)) {
-        int file_fd = open(filePath, O_RDONLY);
-        if (file_fd == -1) {
-            perror("Failed to open input file");
+    ListNode *node = list_first(fileList);
+    while (node != NULL) {
+        const char *filePath = list_node_value(fileList, node);
+        struct stat metadata;
+        if (lstat(filePath, &metadata) == -1) {
+            perror("Failed to stat input file/directory");
             close(fd);
             return;
         }
 
-        off_t data_offset = lseek(fd, 0, SEEK_CUR);
-        char buffer[4096];
-        ssize_t bytes_read;
-        if (gzip) {
-            int pipefd[2];
-            if (pipe(pipefd) == -1) {
-                perror("Failed to create pipe");
-                close(file_fd);
+        if (S_ISDIR(metadata.st_mode)) {
+            process_directory(filePath, fileList, fd, gzip);
+        } else if (S_ISREG(metadata.st_mode)) {
+            int file_fd = open(filePath, O_RDONLY);
+            if (file_fd == -1) {
+                perror("Failed to open input file");
+                close(fd);
                 return;
             }
 
-            pid_t pid = fork();
-            if (pid == -1) {
-                perror("Failed to fork");
-                close(file_fd);
-                return;
-            }
-
-            if (pid == 0) { // Child process
-                close(pipefd[1]); // Close write end of the pipe
-                dup2(pipefd[0], STDIN_FILENO); // Redirect stdin to read end of the pipe
-                dup2(fd, STDOUT_FILENO); // Redirect stdout to the archive file
-                execlp("gzip", "gzip", "-c", NULL); // Execute gzip
-                perror("Failed to exec gzip");
-                exit(EXIT_FAILURE);
-            } else { // Parent process
-                close(pipefd[0]); // Close read end of the pipe
-                while ((bytes_read = read(file_fd, buffer, sizeof(buffer))) > 0) {
-                    write(pipefd[1], buffer, bytes_read); // Write to the pipe
+            off_t data_offset = lseek(fd, 0, SEEK_CUR);
+            char buffer[4096];
+            ssize_t bytes_read;
+            if (gzip) {
+                int pipefd[2];
+                if (pipe(pipefd) == -1) {
+                    perror("Failed to create pipe");
+                    close(file_fd);
+                    return;
                 }
-                close(pipefd[1]); // Close write end of the pipe
-                waitpid(pid, NULL, 0); // Wait for the child process to finish
-            }
-        } else {
-            while ((bytes_read = read(file_fd, buffer, sizeof(buffer))) > 0) {
-                write(fd, buffer, bytes_read);
-            }
-        }
-        close(file_fd);
 
-        size_t data_size = lseek(fd, 0, SEEK_CUR) - data_offset;
-        add_file_entry(&head, filePath, &metadata, data_offset, data_size, NULL);
+                pid_t pid = fork();
+                if (pid == -1) {
+                    perror("Failed to fork");
+                    close(file_fd);
+                    return;
+                }
+
+                if (pid == 0) { // Child process
+                    close(pipefd[1]); // Close write end of the pipe
+                    dup2(pipefd[0], STDIN_FILENO); // Redirect stdin to read end of the pipe
+                    dup2(fd, STDOUT_FILENO); // Redirect stdout to the archive file
+                    execlp("gzip", "gzip", "-c", NULL); // Execute gzip
+                    perror("Failed to exec gzip");
+                    exit(EXIT_FAILURE);
+                } else { // Parent process
+                    close(pipefd[0]); // Close read end of the pipe
+                    while ((bytes_read = read(file_fd, buffer, sizeof(buffer))) > 0) {
+                        write(pipefd[1], buffer, bytes_read); // Write to the pipe
+                    }
+                    close(pipefd[1]); // Close write end of the pipe
+                    waitpid(pid, NULL, 0); // Wait for the child process to finish
+                }
+            } else {
+                while ((bytes_read = read(file_fd, buffer, sizeof(buffer))) > 0) {
+                    write(fd, buffer, bytes_read);
+                }
+            }
+            close(file_fd);
+
+            size_t data_size = lseek(fd, 0, SEEK_CUR) - data_offset;
+            list_insert_next(fileList, list_last(fileList), strdup(filePath));
+        }
+
+        node = list_next(fileList, node);
     }
 
     // Update header with metadata offset and number of entries
     header.metadata_offset = lseek(fd, 0, SEEK_CUR);
-    header.num_entries = count_entries(head);
+    header.num_entries = list_size(fileList);
     lseek(fd, 0, SEEK_SET);
     write(fd, &header, sizeof(MyzHeader));
 
     // Write metadata
     lseek(fd, header.metadata_offset, SEEK_SET);
-    write_metadata(fd, head);
-
-    // Free allocated memory
-    free_file_entries(head);
+    // write_metadata(fd, fileList); // Implement write_metadata to handle ADTList
 
     close(fd);
 }
