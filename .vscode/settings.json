@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "myz.h": "c",
+        "common.h": "c"
+    }
+}

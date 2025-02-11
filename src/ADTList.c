@@ -93,4 +93,3 @@ ListNode list_find(List list, void* value, int (*compare)(void*, void*)) {
 	}
 	return NULL;
 }
-

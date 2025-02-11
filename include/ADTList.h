@@ -54,3 +54,6 @@ void* list_value(List list, ListNode node);
 
 // Find the node with the given value
 ListNode list_find(List list, void* value, int (*compare)(void*, void*));
+
+// Destroy archive entry
+void destroy_archive_entry(void *value);

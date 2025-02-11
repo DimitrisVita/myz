@@ -1,244 +1,307 @@
 #include "myz.h"
-#include "common.h"
-#include "utils.h"
-#include "ADTList.h" // Include ADTList header
+#include "ADTList.h"
+#include <libgen.h>
 #include <fcntl.h>
-#include <sys/stat.h>
-#include <dirent.h>
-#include <zlib.h>
-#include <limits.h> // Include this header for PATH_MAX
-#include <sys/wait.h> // Include this header for waitpid
-#include <stdint.h> // Include this header for uint32_t
-
-#define PATH_MAX 4096 // Define PATH_MAX if not defined
+#include <unistd.h>
 
 typedef struct {
-    char *path;
-    struct stat metadata;
-    off_t data_offset;
-    size_t data_size;
-    char *link_target;
-} FileEntry;
+    MyzNode node;
+    char *filePath;
+    bool gzip;
+} ArchiveEntry;
 
-typedef struct Node {
-    FileEntry entry;
-    struct Node *next;
-} Node;
+static uint64_t next_node_id = 1; // Start from 1 (0 is root)
 
-typedef struct {
-    char magic[4];          // Magic number (e.g., "MYZ\0")
-    uint32_t num_entries;   // Number of entries in the archive
-    off_t metadata_offset;  // Offset to metadata section
-    uint8_t flags;          // Flags (e.g., compression enabled)
-} MyzHeader;
-
-void add_file_entry(Node **head, const char *path, struct stat *metadata, off_t data_offset, size_t data_size, const char *link_target) {
-    Node *new_node = (Node *)malloc(sizeof(Node));
-    new_node->entry.path = strdup(path);
-    new_node->entry.metadata = *metadata;
-    new_node->entry.data_offset = data_offset;
-    new_node->entry.data_size = data_size;
-    new_node->entry.link_target = link_target ? strdup(link_target) : NULL;
-    new_node->next = *head;
-    *head = new_node;
+void destroy_archive_entry(void *value) {
+    ArchiveEntry *entry = (ArchiveEntry *)value;
+    free(entry->node.name);
+    free(entry->node.link_target);
+    free(entry->filePath);
+    free(entry);
 }
 
-void write_metadata(int fd, Node *head) {
-    Node *current = head;
-    while (current) {
-        write(fd, current->entry.path, strlen(current->entry.path) + 1); // Write path as string
+void add_to_list(List list, const MyzNode *node, const char *filePath, bool gzip) {
+    ArchiveEntry *entry = malloc(sizeof(ArchiveEntry));
+    if (!entry) {
+        perror("malloc");
+        exit(EXIT_FAILURE);
+    }
+    entry->node = *node;
+    entry->filePath = strdup(filePath);
+    if (!entry->filePath) {
+        perror("strdup");
+        exit(EXIT_FAILURE);
+    }
+    entry->gzip = gzip;
+    list_insert_after(list, list_last(list), entry);
+}
 
-        // Serialize metadata in a platform-independent way
-        uint32_t mode = (uint32_t)current->entry.metadata.st_mode;
-        uint64_t size = (uint64_t)current->entry.metadata.st_size;
-        uint64_t data_offset = (uint64_t)current->entry.data_offset;
-        uint64_t data_size = (uint64_t)current->entry.data_size;
+void write_metadata(int archive_fd, const MyzNode *node) {
+    MyzNodeSerialized serialized = {
+        .id = node->id,
+        .parent_id = node->parent_id,
+        .mode = node->mode,
+        .uid = node->uid,
+        .gid = node->gid,
+        .mtime = node->mtime,
+        .atime = node->atime,
+        .ctime = node->ctime,
+        .size = node->size,
+        .data_offset = node->data_offset,
+        .data_length = node->data_length,
+        .name_len = node->name ? strlen(node->name) + 1 : 0,
+        .link_target_len = node->link_target ? strlen(node->link_target) + 1 : 0,
+        .inode = node->inode  // Add this
+    };
 
-        write(fd, &mode, sizeof(uint32_t));
-        write(fd, &size, sizeof(uint64_t));
-        write(fd, &data_offset, sizeof(uint64_t));
-        write(fd, &data_size, sizeof(uint64_t));
+    write(archive_fd, &serialized, sizeof(MyzNodeSerialized));
 
-        // Write other metadata fields as needed
-        current = current->next;
+    if (node->name) {
+        write(archive_fd, node->name, serialized.name_len);
+    }
+    if (node->link_target) {
+        write(archive_fd, node->link_target, serialized.link_target_len);
     }
 }
 
-void free_file_entries(Node *head) {
-    Node *current = head;
-    while (current) {
-        free(current->entry.path);
-        if (current->entry.link_target) {
-            free(current->entry.link_target);
-        }
-        Node *temp = current;
-        current = current->next;
-        free(temp);
-    }
-}
-
-void process_directory(const char *dir_path, List *fileList, int fd, bool gzip) {
-    DIR *dir = opendir(dir_path);
-    if (!dir) return;
-
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
-
-        char full_path[PATH_MAX];
-        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
-
-        struct stat metadata;
-        if (lstat(full_path, &metadata) == -1) continue;
-
-        if (S_ISDIR(metadata.st_mode)) {
-            process_directory(full_path, fileList, fd, gzip);
-        } else if (S_ISREG(metadata.st_mode)) {
-            int file_fd = open(full_path, O_RDONLY);
-            if (file_fd == -1) continue;
-
-            off_t data_offset = lseek(fd, 0, SEEK_CUR);
-            char buffer[4096];
-            ssize_t bytes_read;
-            if (gzip) {
-                int pipefd[2];
-                if (pipe(pipefd) == -1) {
-                    perror("Failed to create pipe");
-                    close(file_fd);
-                    return;
-                }
-
-                pid_t pid = fork();
-                if (pid == -1) {
-                    perror("Failed to fork");
-                    close(file_fd);
-                    return;
-                }
-
-                if (pid == 0) { // Child process
-                    close(pipefd[1]); // Close write end of the pipe
-                    dup2(pipefd[0], STDIN_FILENO); // Redirect stdin to read end of the pipe
-                    dup2(fd, STDOUT_FILENO); // Redirect stdout to the archive file
-                    execlp("gzip", "gzip", "-c", NULL); // Execute gzip
-                    perror("Failed to exec gzip");
-                    exit(EXIT_FAILURE);
-                } else { // Parent process
-                    close(pipefd[0]); // Close read end of the pipe
-                    while ((bytes_read = read(file_fd, buffer, sizeof(buffer))) > 0) {
-                        write(pipefd[1], buffer, bytes_read); // Write to the pipe
-                    }
-                    close(pipefd[1]); // Close write end of the pipe
-                    waitpid(pid, NULL, 0); // Wait for the child process to finish
-                }
-            } else {
-                while ((bytes_read = read(file_fd, buffer, sizeof(buffer))) > 0) {
-                    write(fd, buffer, bytes_read);
-                }
-            }
-            close(file_fd);
-
-            size_t data_size = lseek(fd, 0, SEEK_CUR) - data_offset;
-            list_insert_next(fileList, list_last(fileList), strdup(full_path));
-        } else if (S_ISLNK(metadata.st_mode)) {
-            char link_target[PATH_MAX];
-            ssize_t len = readlink(full_path, link_target, sizeof(link_target) - 1);
-            if (len != -1) {
-                link_target[len] = '\0';
-                list_insert_next(fileList, list_last(fileList), strdup(full_path));
-            }
-        }
-    }
-    closedir(dir);
-}
-
-void create_archive(const char *archiveFile, List *fileList, bool gzip) {
-    int fd = open(archiveFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+void write_file_data(int archive_fd, const char *filePath, bool gzip) {
+    int fd = open(filePath, O_RDONLY);
     if (fd == -1) {
-        perror("Failed to create archive file");
+        perror("open");
         return;
     }
 
-    // Write header (placeholder)
-    MyzHeader header = { .magic = "MYZ", .num_entries = 0, .metadata_offset = 0, .flags = gzip ? 1 : 0 };
-    write(fd, &header, sizeof(MyzHeader));
+    char buffer[4096];
+    ssize_t bytesRead;
 
-    ListNode *node = list_first(fileList);
-    while (node != NULL) {
-        const char *filePath = list_node_value(fileList, node);
-        struct stat metadata;
-        if (lstat(filePath, &metadata) == -1) {
-            perror("Failed to stat input file/directory");
-            close(fd);
+    if (gzip) {
+        int gz_fd = dup(fd); // Duplicate to avoid closing the original
+        gzFile gz = gzdopen(gz_fd, "rb");
+        close(fd); // Close the original fd
+        if (!gz) {
+            perror("gzdopen");
             return;
         }
 
-        if (S_ISDIR(metadata.st_mode)) {
-            process_directory(filePath, fileList, fd, gzip);
-        } else if (S_ISREG(metadata.st_mode)) {
-            int file_fd = open(filePath, O_RDONLY);
-            if (file_fd == -1) {
-                perror("Failed to open input file");
-                close(fd);
-                return;
-            }
-
-            off_t data_offset = lseek(fd, 0, SEEK_CUR);
-            char buffer[4096];
-            ssize_t bytes_read;
-            if (gzip) {
-                int pipefd[2];
-                if (pipe(pipefd) == -1) {
-                    perror("Failed to create pipe");
-                    close(file_fd);
-                    return;
-                }
-
-                pid_t pid = fork();
-                if (pid == -1) {
-                    perror("Failed to fork");
-                    close(file_fd);
-                    return;
-                }
-
-                if (pid == 0) { // Child process
-                    close(pipefd[1]); // Close write end of the pipe
-                    dup2(pipefd[0], STDIN_FILENO); // Redirect stdin to read end of the pipe
-                    dup2(fd, STDOUT_FILENO); // Redirect stdout to the archive file
-                    execlp("gzip", "gzip", "-c", NULL); // Execute gzip
-                    perror("Failed to exec gzip");
-                    exit(EXIT_FAILURE);
-                } else { // Parent process
-                    close(pipefd[0]); // Close read end of the pipe
-                    while ((bytes_read = read(file_fd, buffer, sizeof(buffer))) > 0) {
-                        write(pipefd[1], buffer, bytes_read); // Write to the pipe
-                    }
-                    close(pipefd[1]); // Close write end of the pipe
-                    waitpid(pid, NULL, 0); // Wait for the child process to finish
-                }
-            } else {
-                while ((bytes_read = read(file_fd, buffer, sizeof(buffer))) > 0) {
-                    write(fd, buffer, bytes_read);
-                }
-            }
-            close(file_fd);
-
-            size_t data_size = lseek(fd, 0, SEEK_CUR) - data_offset;
-            list_insert_next(fileList, list_last(fileList), strdup(filePath));
+        while ((bytesRead = gzread(gz, buffer, sizeof(buffer))) > 0) {
+            write(archive_fd, buffer, bytesRead);
         }
 
-        node = list_next(fileList, node);
+        gzclose(gz);
+    } else {
+        while ((bytesRead = read(fd, buffer, sizeof(buffer))) > 0) {
+            write(archive_fd, buffer, bytesRead);
+        }
+        close(fd);
+    }
+}
+
+void process_directory(List list, const char *dirPath, bool gzip, uint64_t parent_id) {
+    // Open the directory
+    DIR *dir = opendir(dirPath);
+    if (!dir) {
+        perror("opendir");
+        return;
     }
 
-    // Update header with metadata offset and number of entries
-    header.metadata_offset = lseek(fd, 0, SEEK_CUR);
-    header.num_entries = list_size(fileList);
-    lseek(fd, 0, SEEK_SET);
-    write(fd, &header, sizeof(MyzHeader));
+    // Read the directory entries
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        // Skip "." and ".." entries
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
 
-    // Write metadata
-    lseek(fd, header.metadata_offset, SEEK_SET);
-    // write_metadata(fd, fileList); // Implement write_metadata to handle ADTList
+        // Construct the full path of the entry
+        char *fullPath = malloc(strlen(dirPath) + strlen(entry->d_name) + 2);
+        if (!fullPath) {
+            perror("malloc");
+            closedir(dir);
+            return;
+        }
+        sprintf(fullPath, "%s/%s", dirPath, entry->d_name);
 
-    close(fd);
+        
+        struct stat st;
+        if (lstat(fullPath, &st) == -1) {
+            perror("lstat");
+            free(fullPath);
+            continue;
+        }
+
+        MyzNode node = {
+            .id = next_node_id++,  // Assign unique ID
+            .parent_id = parent_id,
+            .name = strdup(entry->d_name),
+            .mode = st.st_mode,
+            .uid = st.st_uid,
+            .gid = st.st_gid,
+            .mtime = st.st_mtime,
+            .atime = st.st_atime,
+            .ctime = st.st_ctime,
+            .size = st.st_size,
+            .data_offset = 0,  // This will be set later
+            .data_length = 0,  // This will be set later
+            .link_target = NULL,
+            .inode = st.st_ino
+        };
+
+        if (!node.name) {
+            perror("strdup");
+            free(fullPath);
+            continue;
+        }
+
+        if (S_ISLNK(st.st_mode)) {
+            char link_target[PATH_MAX];
+            ssize_t len = readlink(fullPath, link_target, sizeof(link_target) - 1);
+            if (len != -1) {
+                link_target[len] = '\0';
+                node.link_target = strdup(link_target);
+                if (!node.link_target) {
+                    perror("strdup");
+                    free(node.name);
+                    free(fullPath);
+                    continue;
+                }
+            }
+        }
+
+        add_to_list(list, &node, fullPath, gzip);
+
+        if (S_ISDIR(st.st_mode)) {
+            process_directory(list, fullPath, gzip, node.id);
+        }
+
+        free(fullPath);
+    }
+
+    closedir(dir);
+}
+
+void compress_and_write_data(const char *filePath, FILE *archive) {
+    int fd = open(filePath, O_RDONLY);
+    if (fd == -1) {
+        perror("open");
+        return;
+    }
+
+    char buffer[4096];
+    ssize_t bytesRead;
+
+    int gz_fd = dup(fd); // Duplicate to avoid closing the original
+    gzFile gz = gzdopen(gz_fd, "rb");
+    close(fd); // Close the original fd
+    if (!gz) {
+        perror("gzdopen");
+        return;
+    }
+
+    while ((bytesRead = gzread(gz, buffer, sizeof(buffer))) > 0) {
+        fwrite(buffer, 1, bytesRead, archive);
+    }
+
+    gzclose(gz);
+}
+
+void write_metadata_section(FILE *archive, List list) {
+    for (ListNode node = list_first(list); node != NULL; node = list_next(list, node)) {
+        ArchiveEntry *entry = list_value(list, node);
+        write_metadata(archive, &entry->node);
+    }
+}
+
+void create_archive(const char *archiveFile, const char *filePath, bool gzip) {
+    // Create a list to store archive entries
+    List list = list_create(destroy_archive_entry);
+
+    // Get file information for the specified file or directory
+    struct stat st;
+    if (lstat(filePath, &st) == -1) {
+        perror("lstat");
+        list_destroy(list);
+        return;
+    }
+    
+    // Duplicate the file path and extract the base name
+    char *base = basename(strdup(filePath));
+    if (!base) {
+        perror("strdup");
+        list_destroy(list);
+        return;
+    }
+    
+    // Initialize the root node for the archive with the base name and file metadata
+    MyzNode rootNode = {
+        .id = 0,                // Root node ID is 0
+        .parent_id = 0,         // Root node has no parent
+        .name = strdup(base),   // Set the name to the base name of the file or directory
+        .mode = st.st_mode,     // File mode (permissions)
+        .uid = st.st_uid,       // User ID of the owner
+        .gid = st.st_gid,       // Group ID of the owner
+        .mtime = st.st_mtime,   // Last modification time
+        .atime = st.st_atime,   // Last access time
+        .ctime = st.st_ctime,   // Creation time
+        .size = st.st_size,     // Size of the file
+        .data_offset = 0,       // Data offset (to be set later)
+        .data_length = 0,       // Data length (to be set later)
+        .link_target = NULL,    // Link target (if it's a symbolic link)
+        .inode = st.st_ino      // Inode number
+    };
+
+    free(base);
+
+    if (!rootNode.name) {
+        perror("strdup");
+        list_destroy(list);
+        return;
+    }
+
+    add_to_list(list, &rootNode, filePath, gzip);
+
+    if (S_ISDIR(st.st_mode)) {
+        process_directory(list, filePath, gzip, rootNode.id);
+    }
+
+    int archive_fd = open(archiveFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (archive_fd == -1) {
+        perror("open");
+        list_destroy(list);
+        return;
+    }
+
+    MyzHeader header = {
+        .magic = "MYZ\0",
+        .metadata_offset = 0,  // This will be set later
+        .data_offset = sizeof(MyzHeader)
+    };
+
+    write(archive_fd, &header, sizeof(header));
+
+    // Phase 1: Collect all data and record offsets
+    off_t current_data_offset = lseek(archive_fd, 0, SEEK_CUR);
+    for (ListNode node = list_first(list); node != NULL; node = list_next(list, node)) {
+        ArchiveEntry *entry = list_value(list, node);
+        if (S_ISREG(entry->node.mode)) {
+            entry->node.data_offset = current_data_offset;
+            write_file_data(archive_fd, entry->filePath, entry->gzip);
+            entry->node.data_length = lseek(archive_fd, 0, SEEK_CUR) - entry->node.data_offset;
+            current_data_offset = lseek(archive_fd, 0, SEEK_CUR);
+        }
+    }
+
+    // Phase 2: Write metadata section
+    header.metadata_offset = lseek(archive_fd, 0, SEEK_CUR);
+    for (ListNode node = list_first(list); node != NULL; node = list_next(list, node)) {
+        ArchiveEntry *entry = list_value(list, node);
+        write_metadata(archive_fd, &entry->node);
+    }
+
+    // Update header.metadata_offset
+    lseek(archive_fd, 0, SEEK_SET);
+    write(archive_fd, &header, sizeof(header));
+
+    close(archive_fd);
+    list_destroy(list);
 }
 

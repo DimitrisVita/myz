@@ -6,6 +6,13 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <zlib.h>
+
 
 // Structure to hold command line arguments
 typedef struct {

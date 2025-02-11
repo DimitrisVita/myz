@@ -47,6 +47,13 @@ int parse_arguments(int argc, char *argv[], CommandLineArgs *args) {
         }
     }
 
+    // Validate -j flag
+    if (args->gzip && !(args->create || args->append)) {
+        fprintf(stderr, "-j requires -c or -a\n");
+        print_usage();
+        return 1;
+    }
+
     // Check if the archive file is provided
     if (optind < argc) {
         args->archiveFile = argv[optind];
