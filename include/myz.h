@@ -19,8 +19,6 @@ typedef enum {
 
 // Metadata node
 typedef struct {
-    uint64_t id;            // Unique identifier
-    uint64_t parent_id;     // Parent node identifier
     ino_t inode;            // Inode number
     char *name;             // Name of the file or directory
     char *path;             // Full path of the file or directory
@@ -29,7 +27,6 @@ typedef struct {
     gid_t gid;              // Group ID
     mode_t mode;            // File mode
     time_t mtime, atime, ctime; // Timestamps
-    off_t nodeSize;         // Size of the node
     off_t dataSize;         // Size of the data section
     off_t data_offset;      // Byte offset to the data section
     bool compressed;        // Data is compressed
