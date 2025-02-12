@@ -1,7 +1,7 @@
 #include "myz.h"
 
 // Process the directory recursively
-int processDirectory(const char *dirPath, List list, int parent_id, bool gzip) {
+int processDirectory(char *dirPath, List list, uint64_t parent_id, bool gzip) {
     // Open the directory
     DIR *dir = opendir(dirPath);
     if (dir == NULL) {
@@ -12,53 +12,55 @@ int processDirectory(const char *dirPath, List list, int parent_id, bool gzip) {
     // Initialize the number of directory contents
     int numDirContents = 0;
 
-    // Read the directory entries
+    // Process each file and directory in the directory
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
-        // Skip the "." and ".." entries
+        // Skip the current and parent directories
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
 
-        // Get the full path of the directory entry
-        char entryPath[PATH_MAX];
-        snprintf(entryPath, PATH_MAX, "%s/%s", dirPath, entry->d_name);
+        // Get the full path of the file or directory
+        char fullPath[PATH_MAX];
+        snprintf(fullPath, PATH_MAX, "%s/%s", dirPath, entry->d_name);
 
-        // Get file information for the directory entry
+        // Get file information
         struct stat st;
-        if (lstat(entryPath, &st) == -1) {
+        if (lstat(fullPath, &st) == -1) {
             perror("lstat");
             continue;
         }
 
-        // Initialize the node for the directory entry
-        MyzNode node = {
-            .inode = st.st_ino,
-            .id = 0,    // This will be set later
-            .parent_id = parent_id,
-            .name = strdup(entry->d_name),
-            .type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : MYZ_NODE_TYPE_FILE,
-            .uid = st.st_uid,
-            .gid = st.st_gid,
-            .mode = st.st_mode,
-            .mtime = st.st_mtime,
-            .atime = st.st_atime,
-            .ctime = st.st_ctime,
-            .nodeSize = sizeof(MyzNode),
-            .dataSize = 0,  // This will be set later
-            .data_offset = 0    // This will be set later
-        };
+        // Initialize the node for the file or directory and allocate memory dynamically
+        MyzNode *node = malloc(sizeof(MyzNode));
+        node->inode = st.st_ino;
+        node->id = 0;   // This will be set later
+        node->parent_id = parent_id;
+        node->name = malloc(strlen(entry->d_name) + 1); strcpy(node->name, entry->d_name);
+        node->path = malloc(strlen(fullPath) + 1); strcpy(node->path, fullPath);
+        node->type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : MYZ_NODE_TYPE_FILE;
+        node->uid = st.st_uid;
+        node->gid = st.st_gid;
+        node->mode = st.st_mode;
+        node->mtime = st.st_mtime;
+        node->atime = st.st_atime;
+        node->ctime = st.st_ctime;
+        node->nodeSize = sizeof(MyzNode);
+        node->dataSize = (node->type == MYZ_NODE_TYPE_FILE) ? st.st_size : 0;
+        node->data_offset = 0;    // This will be set later
+        node->compressed = gzip;
 
         // Add the node to the list
-        add_to_list(list, &node, entryPath, gzip);
+        list_insert_after(list, list_last(list), node);
 
         // Process the directory recursively
-        if (node.type == MYZ_NODE_TYPE_DIR) {
-            numDirContents += processDirectory(entryPath, list, node.id, gzip);
+        if (node->type == MYZ_NODE_TYPE_DIR) {
+            numDirContents += processDirectory(fullPath, list, node->id, gzip);
         }
 
         // Increment the number of directory contents
         numDirContents++;
+
     }
 
     // Close the directory
@@ -69,42 +71,61 @@ int processDirectory(const char *dirPath, List list, int parent_id, bool gzip) {
 
 
 
-void create_archive(const char *archiveFile, const char *filePath, bool gzip) {
+void create_archive(char *archiveFile, char **fileList, bool gzip) {
     // Create a list to store archive entries
     List list = list_create(NULL);
 
-    // Get file information for the specified file or directory
-    struct stat st;
-    if (lstat(filePath, &st) == -1) {
-        perror("lstat");
-        list_destroy(list);
-        return;
+    // Process each file and directory in the list
+    for (int i = 0; fileList[i] != NULL; i++) {
+        printf("Processing: %s\n", fileList[i]);
+
+        // Get file information
+        struct stat st;
+        if (lstat(fileList[i], &st) == -1) {
+            perror("lstat");
+            list_destroy(list);
+            return;
+        }
+
+        // Initialize the node for the file or directory and allocate memory dynamically
+        MyzNode *node = malloc(sizeof(MyzNode));
+        node->inode = st.st_ino;
+        node->id = 0;
+        node->parent_id = 0;    // No parent for the root node
+        node->name = malloc(strlen(fileList[i]) + 1); strcpy(node->name, fileList[i]);
+        node->path = malloc(strlen(fileList[i]) + 1); strcpy(node->path, fileList[i]);
+        node->type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : MYZ_NODE_TYPE_FILE;
+        node->uid = st.st_uid;
+        node->gid = st.st_gid;
+        node->mode = st.st_mode;
+        node->mtime = st.st_mtime;
+        node->atime = st.st_atime;
+        node->ctime = st.st_ctime;
+        node->nodeSize = sizeof(MyzNode);
+        node->dataSize = (node->type == MYZ_NODE_TYPE_FILE) ? st.st_size : 0;
+        node->data_offset = 0;    // This will be set later
+
+        // Add the node to the list
+        list_insert_after(list, list_last(list), node);
+
+        // Process the directory recursively
+        if (node->type == MYZ_NODE_TYPE_DIR) {
+            node->dirContents = processDirectory(fileList[i], list, node->id, gzip);
+        }
+
     }
-    
-    // Initialize the root node for the archive with the base name and file metadata
-    MyzNode rootNode = {
-        .inode = st.st_ino,
-        .id = 0,    // Root node ID is 0
-        .parent_id = 0, // Root node has no parent
-        .name = basename(strdup(filePath)), // Get the base name of the file path
-        .type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : MYZ_NODE_TYPE_FILE,
-        .uid = st.st_uid,
-        .gid = st.st_gid,
-        .mode = st.st_mode,
-        .mtime = st.st_mtime,
-        .atime = st.st_atime,
-        .ctime = st.st_ctime,
-        .nodeSize = sizeof(MyzNode),
-        .dataSize = 0,  // This will be set later
-        .data_offset = 0    // This will be set later
-    };
 
-    add_to_list(list, &rootNode, filePath, gzip);
-
-    // Process the directory recursively
-    int numDirContents = 0; // Number of directory contents
-    if (rootNode.type == MYZ_NODE_TYPE_DIR) {
-        numDirContents = processDirectory(filePath, list, 1, gzip);
+    // Print the list of archive entries
+    ListNode node = list_first(list);
+    while (node != NULL) {
+        MyzNode *entry = list_value(list, node);
+        printf("Name: %s, Type: %d\n", entry->name, entry->type);
+        if (entry->type == MYZ_NODE_TYPE_DIR) {
+            printf("  Directory Contents: %d\n", entry->dirContents);
+        }
+        // Print path
+        printf("  Path: %s\n", entry->path);
+        node = list_next(list, node);
     }
 
     // // Open the archive file for writing
@@ -135,7 +156,7 @@ void create_archive(const char *archiveFile, const char *filePath, bool gzip) {
     // write_data_sections(archive_fd, list, gzip);
 
     // // Write the metadata sections to the archive file
-    // write_metadata_sections(archive_fd, list, metadata_offset, gzip);
+    // write_metadata_sections(archive_fd, archive_fd, list, metadata_offset, gzip);
     
     // // Update the header with the total bytes and metadata offset
     // header.total_bytes = total_bytes;
@@ -148,29 +169,29 @@ void create_archive(const char *archiveFile, const char *filePath, bool gzip) {
     // close(archive_fd);
 
     // Destroy the list
-    list_destroy(list);
+    // list_destroy(list);
 }
 
-void append_archive(const char *archiveFile, const char *filePath, bool gzip) {
-    // Function definition
-}
+// void append_archive(char *archiveFile, char *filePath, bool gzip) {
+//     // Function definition
+// }
 
-void extract_archive(const char *archiveFile, const char *filePath) {
-    // Function definition
-}
+// void extract_archive(char *archiveFile, char *filePath) {
+//     // Function definition
+// }
 
-void delete_archive(const char *archiveFile, const char *filePath) {
-    // Function definition
-}
+// void delete_archive(char *archiveFile, char *filePath) {
+//     // Function definition
+// }
 
-void print_metadata(const char *archiveFile) {
-    // Function definition
-}
+// void print_metadata(char *archiveFile) {
+//     // Function definition
+// }
 
-void query_archive(const char *archiveFile, const char *filePath) {
-    // Function definition
-}
+// void query_archive(char *archiveFile, char *filePath) {
+//     // Function definition
+// }
 
-void print_hierarchy(const char *archiveFile) {
-    // Function definition
-}
+// void print_hierarchy(char *archiveFile) {
+//     // Function definition
+// }

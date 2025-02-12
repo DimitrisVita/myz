@@ -7,7 +7,7 @@ void print_usage() {
 int parse_arguments(int argc, char *argv[], CommandLineArgs *args) {
     int opt;
     // Initialize arguments
-    *args = (CommandLineArgs){false, false, false, false, false, false, false, false, NULL, NULL};
+    *args = (CommandLineArgs){false, false, false, false, false, false, false, false, NULL, NULL, 0};
 
     if (argc < 3) {
         print_usage();
@@ -63,11 +63,12 @@ int parse_arguments(int argc, char *argv[], CommandLineArgs *args) {
         return 1;
     }
 
-    // Check if the file path is provided
-    if (optind < argc) {
-        args->filePath = argv[optind];
-        optind++;
-    }
+    // Copy the list of files and directories to the args structure
+    args->fileList = &argv[optind];
+    args->numFiles = argc - optind;
+
+    // SOS AN EXW MEMORY LEAK EDW THA EINAI EPEIDH DEN KANW MALLOC
+
 
     return 0;
 }

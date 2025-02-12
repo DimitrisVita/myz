@@ -26,5 +26,6 @@ typedef struct {
     bool query;
     bool gzip;
     char *archiveFile;
-    char *filePath;
+    char **fileList;
+    int numFiles;
 } CommandLineArgs;

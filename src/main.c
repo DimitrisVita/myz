@@ -9,24 +9,29 @@ int main(int argc, char *argv[]) {
         return 1;
 
     // Call the appropriate function based on the command line arguments
-    if (args.create && args.filePath) {
-        create_archive(args.archiveFile, args.filePath, args.gzip);
-    } else if (args.append && args.filePath) {
-        append_archive(args.archiveFile, args.filePath, args.gzip);
-    } else if (args.export) {
-        extract_archive(args.archiveFile, args.filePath);
-    } else if (args.delete && args.filePath) {
-        delete_archive(args.archiveFile, args.filePath);
-    } else if (args.metadata && !args.filePath) {
-        print_metadata(args.archiveFile);
-    } else if (args.query && args.filePath) {
-        query_archive(args.archiveFile, args.filePath);
-    } else if (args.print && !args.filePath) {
-        print_hierarchy(args.archiveFile);
+    if (args.create && args.fileList) {
+        create_archive(args.archiveFile, args.fileList, args.gzip);
     } else {
         print_usage();
         return 1;
     }
+
+    //  else if (args.append && args.fileList) {
+    //     append_archive(args.archiveFile, args.fileList, args.gzip);
+    // } else if (args.export) {
+    //     extract_archive(args.archiveFile, args.fileList[0]);
+    // } else if (args.delete && args.fileList) {
+    //     delete_archive(args.archiveFile, args.fileList[0]);
+    // } else if (args.metadata && !args.fileList) {
+    //     print_metadata(args.archiveFile);
+    // } else if (args.query && args.fileList) {
+    //     query_archive(args.archiveFile, args.fileList[0]);
+    // } else if (args.print && !args.fileList) {
+    //     print_hierarchy(args.archiveFile);
+    // } else {
+    //     print_usage();
+    //     return 1;
+    // }
 
     return 0;
 }

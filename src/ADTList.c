@@ -30,6 +30,7 @@ void list_destroy(List list) {
 	free(list);
 }
 
+// Insert a new node after the given node.
 void list_insert_after(List list, ListNode node, void* value) {
 	ListNode new_node = malloc(sizeof(*new_node));
 	new_node->value = value;

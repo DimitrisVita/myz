@@ -23,6 +23,7 @@ typedef struct {
     uint64_t parent_id;     // Parent node identifier
     ino_t inode;            // Inode number
     char *name;             // Name of the file or directory
+    char *path;             // Full path of the file or directory
     myz_node_type type;     // Type of the entry
     uid_t uid;              // User ID
     gid_t gid;              // Group ID
@@ -32,12 +33,13 @@ typedef struct {
     off_t dataSize;         // Size of the data section
     off_t data_offset;      // Byte offset to the data section
     bool compressed;        // Data is compressed
+    int dirContents;        // Number of directory contents
 } MyzNode;
 
-void create_archive(const char *archiveFile, const char *filePath, bool gzip);
-void append_archive(const char *archiveFile, const char *filePath, bool gzip);
-void extract_archive(const char *archiveFile, const char *filePath);
-void delete_archive(const char *archiveFile, const char *filePath);
-void print_metadata(const char *archiveFile);
-void query_archive(const char *archiveFile, const char *filePath);
-void print_hierarchy(const char *archiveFile);
+void create_archive(char *archiveFile, char **fileList, bool gzip);
+void append_archive(char *archiveFile, char **fileList, bool gzip);
+void extract_archive(char *archiveFile, char **fileList);
+void delete_archive(char *archiveFile, char **fileList);
+void print_metadata(char *archiveFile);
+void query_archive(char *archiveFile, char **fileList);
+void print_hierarchy(char *archiveFile);
