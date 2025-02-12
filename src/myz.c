@@ -39,23 +39,17 @@ int processDirectory(char *dirPath, List list, bool gzip, uint64_t *totalBytes) 
 
         // Initialize the node for the file or directory and allocate memory dynamically
         MyzNode *node = malloc(sizeof(MyzNode));
-        node->inode = st.st_ino;
+        node->stat = st;
         node->name = malloc(strlen(entry->d_name) + 1); strcpy(node->name, entry->d_name);
         node->path = malloc(strlen(fullPath) + 1); strcpy(node->path, fullPath);
         node->type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : MYZ_NODE_TYPE_FILE;
-        node->uid = st.st_uid;
-        node->gid = st.st_gid;
-        node->mode = st.st_mode;
-        node->mtime = st.st_mtime;
-        node->atime = st.st_atime;
-        node->ctime = st.st_ctime;
-        node->dataSize = (node->type == MYZ_NODE_TYPE_FILE) ? st.st_size : 0;
         node->data_offset = 0;    // This will be set later
         node->compressed = gzip;
+        node->dirContents = (node->type == MYZ_NODE_TYPE_DIR) ? 0 : -1;
 
         // Add the file size to the total bytes
         if (node->type == MYZ_NODE_TYPE_FILE) {
-            *totalBytes += node->dataSize;
+            *totalBytes += node->stat.st_size;
         }
 
         // Add the node to the list
@@ -97,22 +91,16 @@ void create_archive(char *archiveFile, char **fileList, bool gzip) {
 
         // Initialize the node for the file or directory and allocate memory dynamically
         MyzNode *node = malloc(sizeof(MyzNode));
-        node->inode = st.st_ino;
+        node->stat = st;
         node->name = malloc(strlen(fileList[i]) + 1); strcpy(node->name, fileList[i]);
         node->path = malloc(strlen(fileList[i]) + 1); strcpy(node->path, fileList[i]);
         node->type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : MYZ_NODE_TYPE_FILE;
-        node->uid = st.st_uid;
-        node->gid = st.st_gid;
-        node->mode = st.st_mode;
-        node->mtime = st.st_mtime;
-        node->atime = st.st_atime;
-        node->ctime = st.st_ctime;
-        node->dataSize = (node->type == MYZ_NODE_TYPE_FILE) ? st.st_size : 0;
         node->data_offset = 0;    // This will be set later
+        node->dirContents = (node->type == MYZ_NODE_TYPE_DIR) ? 0 : -1;
 
         // Add the file size to the total bytes
         if (node->type == MYZ_NODE_TYPE_FILE) {
-            totalBytes += node->dataSize;
+            totalBytes += node->stat.st_size;
         }
 
         // Add the node to the list
@@ -132,17 +120,19 @@ void create_archive(char *archiveFile, char **fileList, bool gzip) {
     ListNode node = list_first(list);
     while (node != NULL) {
         MyzNode *entry = list_value(list, node);
-        printf("Name: %s, Type: %d\n", entry->name, entry->type);
         
-        // Print all metadata
-        printf("Inode: %lu\n", entry->inode);
+        printf("Name: %s, Type: %d\n", entry->name, entry->type);
+        printf("Mode: %o\n", entry->stat.st_mode);
+        printf("UID: %d\n", entry->stat.st_uid);
+        printf("GID: %d\n", entry->stat.st_gid);
+        printf("Size: %ld\n", entry->stat.st_size);
+        printf("Access Time: %ld\n", entry->stat.st_atime);
+        printf("Modification Time: %ld\n", entry->stat.st_mtime);
+        printf("Change Time: %ld\n", entry->stat.st_ctime);
         printf("Path: %s\n", entry->path);
-        printf("UID: %u, GID: %u, Mode: %o\n", entry->uid, entry->gid, entry->mode);
-        printf("Data Size: %ld\n", entry->dataSize);
-        printf("Data Offset: %ld, Compressed: %d\n", entry->data_offset, entry->compressed);
-        printf("Timestamps: %ld, %ld, %ld\n", entry->mtime, entry->atime, entry->ctime);
+        printf("Data Offset: %ld\n", entry->data_offset);
+        printf("Compressed: %d\n", entry->compressed);
         printf("Directory Contents: %d\n\n", entry->dirContents);
-
 
         node = list_next(list, node);
     }

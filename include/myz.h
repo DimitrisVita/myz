@@ -19,15 +19,10 @@ typedef enum {
 
 // Metadata node
 typedef struct {
-    ino_t inode;            // Inode number
+    struct stat stat;      // File status information
     char *name;             // Name of the file or directory
     char *path;             // Full path of the file or directory
     myz_node_type type;     // Type of the entry
-    uid_t uid;              // User ID
-    gid_t gid;              // Group ID
-    mode_t mode;            // File mode
-    time_t mtime, atime, ctime; // Timestamps
-    off_t dataSize;         // Size of the data section
     off_t data_offset;      // Byte offset to the data section
     bool compressed;        // Data is compressed
     int dirContents;        // Number of directory contents
