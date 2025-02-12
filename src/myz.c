@@ -1,10 +1,13 @@
 #include "myz.h"
 
 // Transfer the list to the archive file
+void transferListToFile(List list, FILE *archive) {
+
+}
 
 
 // Process the directory recursively
-int processDirectory(char *dirPath, List list, bool gzip) {
+int processDirectory(char *dirPath, List list, bool gzip, uint64_t *totalBytes) {
     // Open the directory
     DIR *dir = opendir(dirPath);
     if (dir == NULL) {
@@ -50,12 +53,17 @@ int processDirectory(char *dirPath, List list, bool gzip) {
         node->data_offset = 0;    // This will be set later
         node->compressed = gzip;
 
+        // Add the file size to the total bytes
+        if (node->type == MYZ_NODE_TYPE_FILE) {
+            *totalBytes += node->dataSize;
+        }
+
         // Add the node to the list
         list_insert_after(list, list_last(list), node);
 
         // Process the directory recursively
         if (node->type == MYZ_NODE_TYPE_DIR) {
-            numDirContents += processDirectory(fullPath, list, gzip);
+            numDirContents += processDirectory(fullPath, list, gzip, totalBytes);
         }
 
         // Increment the number of directory contents
@@ -74,6 +82,8 @@ int processDirectory(char *dirPath, List list, bool gzip) {
 void create_archive(char *archiveFile, char **fileList, bool gzip) {
     // Create a list to store archive entries
     List list = list_create(NULL);
+
+    uint64_t totalBytes = 0;
 
     // Process each file and directory in the list
     for (int i = 0; fileList[i] != NULL; i++) {
@@ -100,15 +110,23 @@ void create_archive(char *archiveFile, char **fileList, bool gzip) {
         node->dataSize = (node->type == MYZ_NODE_TYPE_FILE) ? st.st_size : 0;
         node->data_offset = 0;    // This will be set later
 
+        // Add the file size to the total bytes
+        if (node->type == MYZ_NODE_TYPE_FILE) {
+            totalBytes += node->dataSize;
+        }
+
         // Add the node to the list
         list_insert_after(list, list_last(list), node);
 
         // Process the directory recursively
         if (node->type == MYZ_NODE_TYPE_DIR) {
-            node->dirContents = processDirectory(fileList[i], list, gzip);
+            node->dirContents = processDirectory(fileList[i], list, gzip, &totalBytes);
         }
 
     }
+
+    // Initialize the header of the archive
+    MyzHeader header = {"MYZ", sizeof(MyzHeader) + sizeof(MyzNode) * list_size(list) + totalBytes, sizeof(MyzHeader) + totalBytes};
 
     // Print the list of archive entries
     ListNode node = list_first(list);
