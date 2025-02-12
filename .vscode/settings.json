@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "myz.h": "c",
-        "common.h": "c"
+        "common.h": "c",
+        "limits.h": "c"
     }
 }
