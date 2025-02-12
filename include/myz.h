@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.h"
+#include "ADTList.h"
 
 // Header of the archive
 typedef struct {

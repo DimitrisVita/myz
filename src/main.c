@@ -1,5 +1,6 @@
 #include "common.h"
 #include "utils.h"
+#include "myz.h"
 
 int main(int argc, char *argv[]) {
     CommandLineArgs args;

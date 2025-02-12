@@ -12,7 +12,8 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <zlib.h>
-
+#include <libgen.h>
+#include <linux/limits.h>
 
 // Structure to hold command line arguments
 typedef struct {

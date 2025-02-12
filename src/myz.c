@@ -1,9 +1,4 @@
 #include "myz.h"
-#include "ADTList.h"
-#include <libgen.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <linux/limits.h>  // Add this line to include PATH_MAX
 
 // Process the directory recursively
 int processDirectory(const char *dirPath, List list, int parent_id, bool gzip) {
@@ -154,4 +149,28 @@ void create_archive(const char *archiveFile, const char *filePath, bool gzip) {
 
     // Destroy the list
     list_destroy(list);
+}
+
+void append_archive(const char *archiveFile, const char *filePath, bool gzip) {
+    // Function definition
+}
+
+void extract_archive(const char *archiveFile, const char *filePath) {
+    // Function definition
+}
+
+void delete_archive(const char *archiveFile, const char *filePath) {
+    // Function definition
+}
+
+void print_metadata(const char *archiveFile) {
+    // Function definition
+}
+
+void query_archive(const char *archiveFile, const char *filePath) {
+    // Function definition
+}
+
+void print_hierarchy(const char *archiveFile) {
+    // Function definition
 }
