@@ -11,6 +11,8 @@ int main(int argc, char *argv[]) {
     // Call the appropriate function based on the command line arguments
     if (args.create && args.fileList) {
         create_archive(args.archiveFile, args.fileList, args.gzip);
+    } else if (args.export) {
+        extract_archive(args.archiveFile, args.fileList);
     } else {
         print_usage();
         return 1;

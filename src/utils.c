@@ -64,11 +64,10 @@ int parse_arguments(int argc, char *argv[], CommandLineArgs *args) {
     }
 
     // Copy the list of files and directories to the args structure
-    args->fileList = malloc((argc - optind) * sizeof(char *));
-    for (int i = optind; i < argc; i++) {
-        args->fileList[i - optind] = argv[i];
-    }
+    args->fileList = &argv[optind];
     args->numFiles = argc - optind;
 
+    // SOS AN EXW MEMORY LEAK EDW THA EINAI EPEIDH DEN KANW MALLOC
+    
     return 0;
 }
