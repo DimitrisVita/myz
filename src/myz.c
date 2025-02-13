@@ -19,66 +19,8 @@ int transferListToFile(MyzHeader header, List list, char *archiveFile) {
     int metadataBytesWritten = 0;
     int dataBytesWritten = 0;
 
-    // Write the list of archive entries to the archive file
+    // Write first the data section and then the metadata section
     ListNode node = list_first(list);
-    while (node != NULL) {
-        MyzNode *entry = list_value(list, node);
-
-        if (entry->type == MYZ_NODE_TYPE_FILE) {
-            // Open the file to read its data
-            int file_fd = open(entry->path, O_RDONLY);
-            if (file_fd == -1) {
-                perror("open");
-                close(fd);
-                return -1;
-            }
-
-            // Copy the data from the file to the archive file
-            char buffer[1024];
-            ssize_t bytesRead;
-            while ((bytesRead = read(file_fd, buffer, sizeof(buffer))) > 0) {
-                if (write(fd, buffer, bytesRead) == -1) {
-                    perror("write");
-                    close(fd);
-                    close(file_fd);
-                    return -1;
-                }
-                dataBytesWritten += bytesRead;
-            }
-
-            // Close the file
-            close(file_fd);
-
-            // Calculate the data offset
-            entry->data_offset = lseek(fd, 0, SEEK_CUR) - entry->stat.st_size;
-
-            // Move the fd to the metadata section. We put the metadata at the end of the archive file
-            if (lseek(fd, header.metadata_offset + metadataBytesWritten, SEEK_SET) == -1) {
-                perror("lseek");
-                close(fd);
-                return -1;
-            }
-
-            // Write the updated metadata (entry) to the archive file
-            if (write(fd, entry, sizeof(MyzNode)) == -1) {
-                perror("write");
-                close(fd);
-                return -1;
-            }
-            metadataBytesWritten += sizeof(MyzNode);
-
-        } else if (entry->type == MYZ_NODE_TYPE_DIR) {
-            // Write the directory metadata to the archive file
-            if (write(fd, entry, sizeof(MyzNode)) == -1) {
-                perror("write");
-                close(fd);
-                return -1;
-            }
-            metadataBytesWritten += sizeof(MyzNode);
-        }
-
-        node = list_next(list, node);
-    }
 
     return fd;
 }
