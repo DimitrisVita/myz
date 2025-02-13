@@ -398,8 +398,8 @@ void extract_entries(int fd, List list, char *basePath) {
 
 void extract_file(int fd, MyzNode *file_entry, const char *basePath);
 
-void extract_directory(int fd, List list, ListNode current, const char *basePath) {
-    MyzNode *dir_entry = list_value(list, current);
+void extract_directory(int fd, List list, ListNode *current, const char *basePath) {
+    MyzNode *dir_entry = list_value(list, *current);
     char dirPath[PATH_MAX];
     snprintf(dirPath, sizeof(dirPath), "%s/%s", basePath, dir_entry->name);
 
@@ -412,15 +412,15 @@ void extract_directory(int fd, List list, ListNode current, const char *basePath
     }
 
     int numChildren = dir_entry->dirContents;
-    current = list_next(list, current); // Move to the first child
+    *current = list_next(list, *current); // Move to the first child
 
     for (int i = 0; i < numChildren; ++i) {
-        MyzNode *child = list_value(list, current);
+        MyzNode *child = list_value(list, *current);
         if (child->type == MYZ_NODE_TYPE_DIR) {
             extract_directory(fd, list, current, dirPath);
         } else {
             extract_file(fd, child, dirPath);
-            current = list_next(list, current);
+            *current = list_next(list, *current);
         }
     }
 }
@@ -510,22 +510,20 @@ void extract_archive(char *archiveFile, char **fileList) {
     while (current != NULL) {
         MyzNode *current_entry = list_value(list, current);
         if (current_entry->type == MYZ_NODE_TYPE_DIR) {
-            extract_directory(fd, list, current, ".");
+            extract_directory(fd, list, &current, ".");
         } else {
             extract_file(fd, current_entry, ".");
+            current = list_next(list, current);
         }
-
-        // Move to the next entry
-        current = list_next(list, current);
     }
 
     close(fd);
 
-    // ListNode node = list_first(list);
-    // while (node != NULL) {
-    //     MyzNode *entry = list_value(list, node);
-    //     free(entry);
-    //     node = list_next(list, node);
-    // }
-    // list_destroy(list);
+    ListNode node = list_first(list);
+    while (node != NULL) {
+        MyzNode *entry = list_value(list, node);
+        free(entry);
+        node = list_next(list, node);
+    }
+    list_destroy(list);
 }
