@@ -1,8 +1,6 @@
 #include "ADTList.h"
 #include <stdlib.h>
 
-// ...existing code...
-
 List list_create(DestroyFunc destroy_value) {
 	List list = malloc(sizeof(*list));
 	list->dummy = malloc(sizeof(*(list->dummy)));
