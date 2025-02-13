@@ -36,24 +36,44 @@ int transferListToFile(MyzHeader header, List list, char *archiveFile) {
                 return -1;
             }
 
+            // Calculate the data offset
+            entry->data_offset = sizeof(MyzHeader) + dataBytesWritten;
+            printf("Data Offset: %ld\n", entry->data_offset);
+
+            // Move the fd to the data section
+            if (lseek(fd, entry->data_offset, SEEK_SET) == -1) {
+                perror("lseek");
+                close(fd);
+                close(file_fd);
+                return -1;
+            }
+
             // Copy the data from the file to the archive file
             char buffer[1024];
             ssize_t bytesRead;
-            while ((bytesRead = read(file_fd, buffer, sizeof(buffer))) > 0) {
+            size_t bytesToRead = entry->stat.st_size; // Assuming entry->stat.st_size holds the size of the file
+            while (bytesToRead > 0) {
+                int min = bytesToRead < sizeof(buffer) ? bytesToRead : sizeof(buffer);
+                bytesRead = read(file_fd, buffer, min);
+                if (bytesRead <= 0) {
+                    perror("read");
+                    close(fd);
+                    close(file_fd);
+                    return -1;
+                }
+                printf("Writing %ld bytes. The data is: %.*s\n", bytesRead, (int)bytesRead, buffer);
                 if (write(fd, buffer, bytesRead) == -1) {
                     perror("write");
                     close(fd);
                     close(file_fd);
                     return -1;
                 }
+                bytesToRead -= bytesRead;
                 dataBytesWritten += bytesRead;
             }
 
             // Close the file
             close(file_fd);
-
-            // Calculate the data offset
-            entry->data_offset = lseek(fd, 0, SEEK_CUR) - entry->stat.st_size;
 
             // Move the fd to the metadata section. We put the metadata at the end of the archive file
             if (lseek(fd, header.metadata_offset + metadataBytesWritten, SEEK_SET) == -1) {
@@ -429,46 +449,23 @@ void extract_file(int fd, MyzNode *file_entry, const char *basePath) {
     char filePath[PATH_MAX];
     snprintf(filePath, sizeof(filePath), "%s/%s", basePath, file_entry->name);
 
-    // Print the path of the file
+    int file_fd = open(filePath, O_WRONLY|O_CREAT|O_TRUNC, file_entry->stat.st_mode);
+
+    lseek(fd, file_entry->data_offset, SEEK_SET);
+
     printf("Extracting file: %s\n", filePath);
-
-    int file_fd = open(filePath, O_WRONLY | O_CREAT | O_TRUNC, file_entry->stat.st_mode);
-    if (file_fd == -1) {
-        perror("open");
-        return;
-    }
-
-    if (lseek(fd, file_entry->data_offset, SEEK_SET) == -1) {
-        perror("lseek");
-        close(file_fd);
-        return;
-    }
+    printf("Size: %ld\n", file_entry->stat.st_size);
+    printf("Data Offset: %ld\n", file_entry->data_offset);
 
     size_t bytesToRead = file_entry->stat.st_size;
     char buffer[1024];
-    ssize_t bytesRead;
-
     while (bytesToRead > 0) {
-        size_t chunk = bytesToRead > sizeof(buffer) ? sizeof(buffer) : bytesToRead;
-        bytesRead = read(fd, buffer, chunk);
-        if (bytesRead == -1) {
-            perror("read");
-            close(file_fd);
-            return;
-        }
-        if (bytesRead == 0) {
-            fprintf(stderr, "Unexpected end of file\n");
-            close(file_fd);
-            return;
-        }
-        if (write(file_fd, buffer, bytesRead) == -1) {
-            perror("write");
-            close(file_fd);
-            return;
-        }
+        int min = bytesToRead < sizeof(buffer) ? bytesToRead : sizeof(buffer);
+        ssize_t bytesRead = read(fd, buffer, min);
+        if (bytesRead <= 0) break; // Handle errors
+        write(file_fd, buffer, bytesRead);
         bytesToRead -= bytesRead;
     }
-
     close(file_fd);
 }
 
@@ -503,6 +500,19 @@ void extract_archive(char *archiveFile, char **fileList) {
     while (read(fd, &entry, sizeof(MyzNode)) == sizeof(MyzNode)) {
         MyzNode *node = malloc(sizeof(MyzNode));
         *node = entry;
+
+        // Print the metadata
+        printf("Name: %s\n", node->name);
+        printf("Type: %d\n", node->type);
+        printf("Mode: %o\n", node->stat.st_mode);
+        printf("UID: %d\n", node->stat.st_uid);
+        printf("GID: %d\n", node->stat.st_gid);
+        printf("Size: %ld\n", node->stat.st_size);
+        printf("Access Time: %ld\n", node->stat.st_atime);
+        printf("Modification Time: %ld\n", node->stat.st_mtime);
+        printf("Change Time: %ld\n", node->stat.st_ctime);
+        printf("Path: %s\n", node->path);
+
         list_insert_after(list, list_last(list), node);
     }
 
