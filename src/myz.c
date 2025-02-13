@@ -19,8 +19,66 @@ int transferListToFile(MyzHeader header, List list, char *archiveFile) {
     int metadataBytesWritten = 0;
     int dataBytesWritten = 0;
 
-    // Write first the data section and then the metadata section
+    // Write the list of archive entries to the archive file
     ListNode node = list_first(list);
+    while (node != NULL) {
+        MyzNode *entry = list_value(list, node);
+
+        if (entry->type == MYZ_NODE_TYPE_FILE) {
+            // Open the file to read its data
+            int file_fd = open(entry->path, O_RDONLY);
+            if (file_fd == -1) {
+                perror("open");
+                close(fd);
+                return -1;
+            }
+
+            // Copy the data from the file to the archive file
+            char buffer[1024];
+            ssize_t bytesRead;
+            while ((bytesRead = read(file_fd, buffer, sizeof(buffer))) > 0) {
+                if (write(fd, buffer, bytesRead) == -1) {
+                    perror("write");
+                    close(fd);
+                    close(file_fd);
+                    return -1;
+                }
+                dataBytesWritten += bytesRead;
+            }
+
+            // Close the file
+            close(file_fd);
+
+            // Calculate the data offset
+            entry->data_offset = lseek(fd, 0, SEEK_CUR) - entry->stat.st_size;
+
+            // Move the fd to the metadata section. We put the metadata at the end of the archive file
+            if (lseek(fd, header.metadata_offset + metadataBytesWritten, SEEK_SET) == -1) {
+                perror("lseek");
+                close(fd);
+                return -1;
+            }
+
+            // Write the updated metadata (entry) to the archive file
+            if (write(fd, entry, sizeof(MyzNode)) == -1) {
+                perror("write");
+                close(fd);
+                return -1;
+            }
+            metadataBytesWritten += sizeof(MyzNode);
+
+        } else if (entry->type == MYZ_NODE_TYPE_DIR) {
+            // Write the directory metadata to the archive file
+            if (write(fd, entry, sizeof(MyzNode)) == -1) {
+                perror("write");
+                close(fd);
+                return -1;
+            }
+            metadataBytesWritten += sizeof(MyzNode);
+        }
+
+        node = list_next(list, node);
+    }
 
     return fd;
 }
@@ -60,8 +118,10 @@ int processDirectory(char *dirPath, List list, bool gzip, uint64_t *totalDataByt
         // Initialize the node for the file or directory and allocate memory dynamically
         MyzNode *node = malloc(sizeof(MyzNode));
         node->stat = st;
-        node->name = malloc(strlen(entry->d_name) + 1); strcpy(node->name, entry->d_name);
-        node->path = malloc(strlen(fullPath) + 1); strcpy(node->path, fullPath);
+        strncpy(node->name, entry->d_name, MAX_NAME_LEN - 1);
+        node->name[MAX_NAME_LEN - 1] = '\0';
+        strncpy(node->path, fullPath, MAX_PATH_LEN - 1);
+        node->path[MAX_PATH_LEN - 1] = '\0';
         node->type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : MYZ_NODE_TYPE_FILE;
         node->data_offset = 0;    // This will be set later
         node->compressed = gzip;
@@ -112,8 +172,10 @@ void create_archive(char *archiveFile, char **fileList, bool gzip) {
         // Initialize the node for the file or directory and allocate memory dynamically
         MyzNode *node = malloc(sizeof(MyzNode));
         node->stat = st;
-        node->name = malloc(strlen(fileList[i]) + 1); strcpy(node->name, fileList[i]);
-        node->path = malloc(strlen(fileList[i]) + 1); strcpy(node->path, fileList[i]);
+        strncpy(node->name, fileList[i], MAX_NAME_LEN - 1);
+        node->name[MAX_NAME_LEN - 1] = '\0';
+        strncpy(node->path, fileList[i], MAX_PATH_LEN - 1);
+        node->path[MAX_PATH_LEN - 1] = '\0';
         node->type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : MYZ_NODE_TYPE_FILE;
         node->data_offset = 0;    // This will be set later
         node->dirContents = (node->type == MYZ_NODE_TYPE_DIR) ? 0 : -1;
@@ -175,8 +237,6 @@ void create_archive(char *archiveFile, char **fileList, bool gzip) {
     ListNode node = list_first(list);
     while (node != NULL) {
         MyzNode *entry = list_value(list, node);
-        free(entry->name);
-        free(entry->path);
         free(entry);
         node = list_next(list, node);
     }
@@ -229,6 +289,19 @@ void extract_archive(char *archiveFile, char **fileList) {
     while (read(fd, &entry, sizeof(MyzNode)) > 0) {
         // Print the metadata of the entry
         printf("Name: %s, Type: %d\n", entry.name, entry.type);
+        printf("Mode: %o\n", entry.stat.st_mode);
+        printf("UID: %d\n", entry.stat.st_uid);
+        printf("GID: %d\n", entry.stat.st_gid);
+        printf("Size: %ld\n", entry.stat.st_size);
+        printf("Access Time: %ld\n", entry.stat.st_atime);
+        printf("Modification Time: %ld\n", entry.stat.st_mtime);
+        printf("Change Time: %ld\n", entry.stat.st_ctime);
+        printf("Path: %s\n", entry.path);
+        printf("Data Offset: %ld\n", entry.data_offset);
+        printf("Compressed: %d\n", entry.compressed);
+        printf("Directory Contents: %d\n\n", entry.dirContents);
+
+        
     }
     
     // Close the archive file

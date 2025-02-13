@@ -20,8 +20,8 @@ typedef enum {
 // Metadata node
 typedef struct {
     struct stat stat;      // File status information
-    char *name;             // Name of the file or directory
-    char *path;             // Full path of the file or directory
+    char name[MAX_NAME_LEN];
+    char path[MAX_PATH_LEN];
     myz_node_type type;     // Type of the entry
     off_t data_offset;      // Byte offset to the data section
     bool compressed;        // Data is compressed

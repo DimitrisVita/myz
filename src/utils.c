@@ -68,6 +68,6 @@ int parse_arguments(int argc, char *argv[], CommandLineArgs *args) {
     args->numFiles = argc - optind;
 
     // SOS AN EXW MEMORY LEAK EDW THA EINAI EPEIDH DEN KANW MALLOC
-    
+
     return 0;
 }
