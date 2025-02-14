@@ -44,13 +44,13 @@ int list_size(List list);
 ListNode list_first(List list);
 
 // Get the next node of the given node
-ListNode list_next(List list, ListNode node);
+ListNode list_next(ListNode node);
 
 // Get the last node of the list
 ListNode list_last(List list);
 
 // Get the value of the given node
-void* list_value(List list, ListNode node);
+void* list_value(ListNode node);
 
 // Find the node with the given value
 ListNode list_find(List list, void* value, int (*compare)(void*, void*));

@@ -72,7 +72,7 @@ ListNode list_first(List list) {
 	return list->dummy->next;
 }
 
-ListNode list_next(List list, ListNode node) {
+ListNode list_next(ListNode node) {
 	return node->next;
 }
 
@@ -80,7 +80,7 @@ ListNode list_last(List list) {
 	return list->last;
 }
 
-void* list_value(List list, ListNode node) {
+void* list_value(ListNode node) {
 	return node->value;
 }
 

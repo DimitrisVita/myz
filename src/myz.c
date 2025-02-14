@@ -3,7 +3,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-// Transfer the list to the archive file and return the file descriptor
+// Function to transfer the list of archive entries to the archive file
 int transferListToFile(MyzHeader header, List list, char *archiveFile) {
     // Open the archive file
     int fd = open(archiveFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -19,13 +19,13 @@ int transferListToFile(MyzHeader header, List list, char *archiveFile) {
         return -1;
     }
 
-    int metadataBytesWritten = 0;
-    int dataBytesWritten = 0;
+    int metadataBytesWritten = 0;   // Number of metadata bytes written
+    int dataBytesWritten = 0;       // Number of data bytes written
 
     // Write the list of archive entries to the archive file
     ListNode node = list_first(list);
     while (node != NULL) {
-        MyzNode *entry = list_value(list, node);
+        MyzNode *entry = list_value(node);
 
         if (entry->type == MYZ_NODE_TYPE_FILE) {
             // Open the file to read its data
@@ -38,7 +38,6 @@ int transferListToFile(MyzHeader header, List list, char *archiveFile) {
 
             // Calculate the data offset
             entry->data_offset = sizeof(MyzHeader) + dataBytesWritten;
-            printf("Data Offset: %ld\n", entry->data_offset);
 
             // Move the fd to the data section
             if (lseek(fd, entry->data_offset, SEEK_SET) == -1) {
@@ -51,7 +50,7 @@ int transferListToFile(MyzHeader header, List list, char *archiveFile) {
             // Copy the data from the file to the archive file
             char buffer[1024];
             ssize_t bytesRead;
-            size_t bytesToRead = entry->stat.st_size; // Assuming entry->stat.st_size holds the size of the file
+            size_t bytesToRead = entry->stat.st_size;
             while (bytesToRead > 0) {
                 int min = bytesToRead < sizeof(buffer) ? bytesToRead : sizeof(buffer);
                 bytesRead = read(file_fd, buffer, min);
@@ -61,7 +60,7 @@ int transferListToFile(MyzHeader header, List list, char *archiveFile) {
                     close(file_fd);
                     return -1;
                 }
-                printf("Writing %ld bytes. The data is: %.*s\n", bytesRead, (int)bytesRead, buffer);
+
                 if (write(fd, buffer, bytesRead) == -1) {
                     perror("write");
                     close(fd);
@@ -88,7 +87,7 @@ int transferListToFile(MyzHeader header, List list, char *archiveFile) {
                 close(fd);
                 return -1;
             }
-            metadataBytesWritten += sizeof(MyzNode);
+            metadataBytesWritten += sizeof(MyzNode);    // Increment the number of metadata bytes written
 
         } else if (entry->type == MYZ_NODE_TYPE_DIR) {
             // Write the directory metadata to the archive file
@@ -100,14 +99,14 @@ int transferListToFile(MyzHeader header, List list, char *archiveFile) {
             metadataBytesWritten += sizeof(MyzNode);
         }
 
-        node = list_next(list, node);
+        node = list_next(node);
     }
 
     return fd;
 }
 
 
-// Process the directory recursively
+// Function to process a directory recursively and return the number of directory contents
 int processDirectory(char *dirPath, List list, bool gzip, uint64_t *totalDataBytes) {
     // Open the directory
     DIR *dir = opendir(dirPath);
@@ -123,9 +122,8 @@ int processDirectory(char *dirPath, List list, bool gzip, uint64_t *totalDataByt
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
         // Skip the current and parent directories
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
             continue;
-        }
 
         // Get the full path of the file or directory
         char fullPath[PATH_MAX];
@@ -151,21 +149,18 @@ int processDirectory(char *dirPath, List list, bool gzip, uint64_t *totalDataByt
         node->dirContents = (node->type == MYZ_NODE_TYPE_DIR) ? 0 : -1;
 
         // Add the file size to the total bytes
-        if (node->type == MYZ_NODE_TYPE_FILE) {
+        if (node->type == MYZ_NODE_TYPE_FILE)
             *totalDataBytes += node->stat.st_size;
-        }
 
         // Add the node to the list
         list_insert_after(list, list_last(list), node);
 
         // Process the directory recursively
-        if (node->type == MYZ_NODE_TYPE_DIR) {
+        if (node->type == MYZ_NODE_TYPE_DIR)
             numDirContents += processDirectory(fullPath, list, gzip, totalDataBytes);
-        }
 
         // Increment the number of directory contents
         numDirContents++;
-
     }
 
     // Close the directory
@@ -174,55 +169,50 @@ int processDirectory(char *dirPath, List list, bool gzip, uint64_t *totalDataByt
     return numDirContents;
 }
 
-
-
+// Function to create an archive
 void create_archive(char *archiveFile, char **fileList, bool gzip) {
-    // Create a list to store archive entries
-    List list = list_create(NULL);
+    List list = list_create(NULL);  // List to store the file and directory information
 
-    uint64_t totalDataBytes = 0;
+    uint64_t totalDataBytes = 0;    // Total number of data bytes in the archive
 
     // Process each file and directory in the list
     for (int i = 0; fileList[i] != NULL; i++) {
-        // Get file information
-        struct stat st;
+        struct stat st; // File information
         if (lstat(fileList[i], &st) == -1) {
             perror("lstat");
             list_destroy(list);
             return;
         }
 
-        // Initialize the node for the file or directory and allocate memory dynamically
+        // Initialize the node for the file or directory
         MyzNode *node = malloc(sizeof(MyzNode));
-        node->stat = st;
-        // get only the last part of the path
+        node->stat = st;    // Copy the file information
+        
+        // Get the name of the file or directory
         char *lastPart = strrchr(fileList[i], '/');
-        if (lastPart == NULL) {
+        if (lastPart == NULL) { // No directory part
             strncpy(node->name, fileList[i], MAX_NAME_LEN - 1);
             node->name[MAX_NAME_LEN - 1] = '\0';
-        } else {
+        } else {    // Directory part exists
             strncpy(node->name, lastPart + 1, MAX_NAME_LEN - 1);
             node->name[MAX_NAME_LEN - 1] = '\0';
         }
-        strncpy(node->path, fileList[i], MAX_PATH_LEN - 1);
+        strncpy(node->path, fileList[i], MAX_PATH_LEN - 1); // Copy the path
         node->path[MAX_PATH_LEN - 1] = '\0';
-        node->type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : MYZ_NODE_TYPE_FILE;
+        node->type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : MYZ_NODE_TYPE_FILE;  // Set the type
         node->data_offset = 0;    // This will be set later
-        node->dirContents = (node->type == MYZ_NODE_TYPE_DIR) ? 0 : -1;
+        node->dirContents = (node->type == MYZ_NODE_TYPE_DIR) ? 0 : -1; // Set the number of directory contents
 
         // Add the file size to the total bytes
-        if (node->type == MYZ_NODE_TYPE_FILE) {
+        if (node->type == MYZ_NODE_TYPE_FILE)
             totalDataBytes += node->stat.st_size;
-        }
 
         // Add the node to the list
         list_insert_after(list, list_last(list), node);
 
         // Process the directory recursively
-        if (node->type == MYZ_NODE_TYPE_DIR) {
+        if (node->type == MYZ_NODE_TYPE_DIR)
             node->dirContents = processDirectory(fileList[i], list, gzip, &totalDataBytes);
-        }
-
     }
 
     // Initialize the header of the archive
@@ -243,99 +233,39 @@ void create_archive(char *archiveFile, char **fileList, bool gzip) {
     close(fd);
     
     // Free dynamically allocated memory
-    ListNode node = list_first(list);
-    while (node != NULL) {
-        MyzNode *entry = list_value(list, node);
-        free(entry);
-        node = list_next(list, node);
-    }
+    // TO DO
 
     // Destroy the list
     list_destroy(list);
 }
 
-// Function to extract files and directories recursively
-void extract_entries(int fd, List list, char *basePath) {
-    ListNode node = list_first(list);
-    while (node != NULL) {
-        MyzNode *entry = list_value(list, node);
-
-        // Construct the full path
-        char fullPath[PATH_MAX];
-        snprintf(fullPath, PATH_MAX, "%s/%s", basePath, entry->name);
-
-        if (entry->type == MYZ_NODE_TYPE_DIR) {
-            // Create the directory
-            if (mkdir(fullPath, entry->stat.st_mode) == -1 && errno != EEXIST) {
-                perror("mkdir");
-                return;
-            }
-
-            // Recursively extract the directory contents
-            extract_entries(fd, list, fullPath);
-
-        } else if (entry->type == MYZ_NODE_TYPE_FILE) {
-            // Create the file
-            int file_fd = open(fullPath, O_WRONLY | O_CREAT | O_TRUNC, entry->stat.st_mode);
-            if (file_fd == -1) {
-                perror("open");
-                return;
-            }
-
-            // Move to the data offset
-            if (lseek(fd, entry->data_offset, SEEK_SET) == -1) {
-                perror("lseek");
-                close(file_fd);
-                return;
-            }
-
-            // Copy the data from the archive to the file
-            char buffer[1024];
-            ssize_t bytesRead;
-            size_t bytesToRead = entry->stat.st_size;
-            while (bytesToRead > 0 && (bytesRead = read(fd, buffer, sizeof(buffer))) > 0) {
-                if (write(file_fd, buffer, bytesRead) == -1) {
-                    perror("write");
-                    close(file_fd);
-                    return;
-                }
-                bytesToRead -= bytesRead;
-            }
-
-            // Close the file
-            close(file_fd);
-        }
-
-        node = list_next(list, node);
-    }
-}
-
+// Function to extract an archive
 void extract_file(int fd, MyzNode *file_entry, const char *basePath) {
+    // Construct the file path
     char filePath[PATH_MAX];
     snprintf(filePath, sizeof(filePath), "%s/%s", basePath, file_entry->name);
 
     int file_fd = open(filePath, O_WRONLY|O_CREAT|O_TRUNC, file_entry->stat.st_mode);
 
-    lseek(fd, file_entry->data_offset, SEEK_SET);
+    lseek(fd, file_entry->data_offset, SEEK_SET);   // Move to the data offset
 
-    printf("Extracting file: %s\n", filePath);
-    printf("Size: %ld\n", file_entry->stat.st_size);
-    printf("Data Offset: %ld\n", file_entry->data_offset);
-
+    // Read the data from the archive and write it to the file
     size_t bytesToRead = file_entry->stat.st_size;
     char buffer[1024];
     while (bytesToRead > 0) {
         int min = bytesToRead < sizeof(buffer) ? bytesToRead : sizeof(buffer);
         ssize_t bytesRead = read(fd, buffer, min);
-        if (bytesRead <= 0) break; // Handle errors
+        if (bytesRead <= 0) break;
         write(file_fd, buffer, bytesRead);
         bytesToRead -= bytesRead;
     }
     close(file_fd);
 }
 
+// Function to extract an archive
 void extract_directory(int fd, List list, ListNode *current, const char *basePath) {
-    MyzNode *dir_entry = list_value(list, *current);
+    // Create the directory
+    MyzNode *dir_entry = list_value(*current);
     char dirPath[PATH_MAX];
     snprintf(dirPath, sizeof(dirPath), "%s/%s", basePath, dir_entry->name);
 
@@ -344,27 +274,31 @@ void extract_directory(int fd, List list, ListNode *current, const char *basePat
         return;
     }
 
+    // Extract the directory contents
     int numChildren = dir_entry->dirContents;
-    *current = list_next(list, *current); // Move to the first child
+    *current = list_next(*current);
 
+    // Extract each child
     for (int i = 0; i < numChildren; ++i) {
-        MyzNode *child = list_value(list, *current);
+        MyzNode *child = list_value(*current);
         if (child->type == MYZ_NODE_TYPE_DIR) {
             extract_directory(fd, list, current, dirPath);
         } else {
             extract_file(fd, child, dirPath);
-            *current = list_next(list, *current);
+            *current = list_next(*current);
         }
     }
 }
 
 void extract_archive(char *archiveFile, char **fileList) {
+    // Open the archive file
     int fd = open(archiveFile, O_RDONLY);
     if (fd == -1) {
         perror("open");
         return;
     }
 
+    // Read the header of the archive
     MyzHeader header;
     if (read(fd, &header, sizeof(MyzHeader)) != sizeof(MyzHeader)) {
         perror("read");
@@ -372,18 +306,21 @@ void extract_archive(char *archiveFile, char **fileList) {
         return;
     }
 
+    // Check if the archive file is valid
     if (strncmp(header.magic, "MYZ", 4) != 0) {
         fprintf(stderr, "Invalid archive file\n");
         close(fd);
         return;
     }
 
+    // Move the file descriptor to the metadata offset
     if (lseek(fd, header.metadata_offset, SEEK_SET) == -1) {
         perror("lseek");
         close(fd);
         return;
     }
 
+    // Read the list of archive entries
     List list = list_create(NULL);
     MyzNode entry;
     while (read(fd, &entry, sizeof(MyzNode)) == sizeof(MyzNode)) {
@@ -393,24 +330,23 @@ void extract_archive(char *archiveFile, char **fileList) {
         list_insert_after(list, list_last(list), node);
     }
 
+    // Extract the files and directories
     ListNode current = list_first(list);
     while (current != NULL) {
-        MyzNode *current_entry = list_value(list, current);
+        MyzNode *current_entry = list_value(current);
         if (current_entry->type == MYZ_NODE_TYPE_DIR) {
             extract_directory(fd, list, &current, ".");
         } else {
             extract_file(fd, current_entry, ".");
-            current = list_next(list, current);
+            current = list_next(current);
         }
     }
 
+    // Close the archive file
     close(fd);
 
-    ListNode node = list_first(list);
-    while (node != NULL) {
-        MyzNode *entry = list_value(list, node);
-        free(entry);
-        node = list_next(list, node);
-    }
+    // Destroy the list
+    // TO DO
+
     list_destroy(list);
 }

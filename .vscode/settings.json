@@ -3,7 +3,8 @@
         "myz.h": "c",
         "common.h": "c",
         "limits.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "stdlib.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }
