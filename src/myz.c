@@ -195,8 +195,15 @@ void create_archive(char *archiveFile, char **fileList, bool gzip) {
         // Initialize the node for the file or directory and allocate memory dynamically
         MyzNode *node = malloc(sizeof(MyzNode));
         node->stat = st;
-        strncpy(node->name, fileList[i], MAX_NAME_LEN - 1);
-        node->name[MAX_NAME_LEN - 1] = '\0';
+        // get only the last part of the path
+        char *lastPart = strrchr(fileList[i], '/');
+        if (lastPart == NULL) {
+            strncpy(node->name, fileList[i], MAX_NAME_LEN - 1);
+            node->name[MAX_NAME_LEN - 1] = '\0';
+        } else {
+            strncpy(node->name, lastPart + 1, MAX_NAME_LEN - 1);
+            node->name[MAX_NAME_LEN - 1] = '\0';
+        }
         strncpy(node->path, fileList[i], MAX_PATH_LEN - 1);
         node->path[MAX_PATH_LEN - 1] = '\0';
         node->type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : MYZ_NODE_TYPE_FILE;
@@ -225,27 +232,6 @@ void create_archive(char *archiveFile, char **fileList, bool gzip) {
         sizeof(MyzHeader) + totalDataBytes
     };
 
-    // // Print the list of archive entries
-    // ListNode node = list_first(list);
-    // while (node != NULL) {
-    //     MyzNode *entry = list_value(node);
-        
-    //     printf("Name: %s, Type: %d\n", entry->name, entry->type);
-    //     printf("Mode: %o\n", entry->stat.st_mode);
-    //     printf("UID: %d\n", entry->stat.st_uid);
-    //     printf("GID: %d\n", entry->stat.st_gid);
-    //     printf("Size: %ld\n", entry->stat.st_size);
-    //     printf("Access Time: %ld\n", entry->stat.st_atime);
-    //     printf("Modification Time: %ld\n", entry->stat.st_mtime);
-    //     printf("Change Time: %ld\n", entry->stat.st_ctime);
-    //     printf("Path: %s\n", entry->path);
-    //     printf("Data Offset: %ld\n", entry->data_offset);
-    //     printf("Compressed: %d\n", entry->compressed);
-    //     printf("Directory Contents: %d\n\n", entry->dirContents);
-
-    //     node = list_next(list, node);
-    // }
-
     // Transfer the list to the archive file
     int fd = transferListToFile(header, list, archiveFile);
     if (fd == -1) {
@@ -267,10 +253,6 @@ void create_archive(char *archiveFile, char **fileList, bool gzip) {
     // Destroy the list
     list_destroy(list);
 }
-
-// void append_archive(char *archiveFile, char *filePath, bool gzip) {
-//     // Function definition
-// }
 
 // Function to extract files and directories recursively
 void extract_entries(int fd, List list, char *basePath) {
@@ -328,123 +310,6 @@ void extract_entries(int fd, List list, char *basePath) {
     }
 }
 
-// void extract_archive(char *archiveFile, char **fileList) {
-//     // Open the archive file
-//     int fd = open(archiveFile, O_RDONLY);
-//     if (fd == -1) {
-//         perror("open");
-//         return;
-//     }
-
-//     // Read the header of the archive
-//     MyzHeader header;
-//     if (read(fd, &header, sizeof(MyzHeader)) == -1) {
-//         perror("read");
-//         close(fd);
-//         return;
-//     }
-
-//     // Print the header of the archive
-//     printf("Magic: %s\n", header.magic);
-//     printf("Total Bytes: %ld\n", header.total_bytes);
-//     printf("Metadata Offset: %ld\n", header.metadata_offset);
-
-//     // Check the magic number
-//     if (strncmp(header.magic, "MYZ", 4) != 0) {
-//         fprintf(stderr, "Invalid archive file\n");
-//         close(fd);
-//         return;
-//     }
-
-//     // Move the file descriptor to the metadata section
-//     if (lseek(fd, header.metadata_offset, SEEK_SET) == -1) {
-//         perror("lseek");
-//         close(fd);
-//         return;
-//     }
-
-//     List list = list_create(NULL);
-
-//     // Read the metadata section and extract files and directories
-//     MyzNode entry;
-//     while (read(fd, &entry, sizeof(MyzNode)) > 0) {
-//         // Add the entry to the list
-//         list_insert_after(list, list_last(list), &entry);
-//     }
-
-//     // Print the list of archive entries
-//     // ListNode node = list_first(list);
-//     // while (node != NULL) {
-//     //     MyzNode *entry = list_value(node);
-        
-//     //     printf("Name: %s, Type: %d\n", entry->name, entry->type);
-//     //     printf("Mode: %o\n", entry->stat.st_mode);
-//     //     printf("UID: %d\n", entry->stat.st_uid);
-//     //     printf("GID: %d\n", entry->stat.st_gid);
-//     //     printf("Size: %ld\n", entry->stat.st_size);
-//     //     printf("Access Time: %ld\n", entry->stat.st_atime);
-//     //     printf("Modification Time: %ld\n", entry->stat.st_mtime);
-//     //     printf("Change Time: %ld\n", entry->stat.st_ctime);
-//     //     printf("Path: %s\n", entry->path);
-//     //     printf("Data Offset: %ld\n", entry->data_offset);
-//     //     printf("Compressed: %d\n", entry->compressed);
-//     //     printf("Directory Contents: %d\n\n", entry->dirContents);
-
-//     //     node = list_next(list, node);
-//     // }
-
-//     // Extract the files and directories
-//     extract_entries(fd, list, ".");
-
-//     // Close the archive file
-//     close(fd);
-// }
-
-// void delete_archive(char *archiveFile, char *filePath) {
-//     // Function definition
-// }
-
-// void print_metadata(char *archiveFile) {
-//     // Function definition
-// }
-
-// void query_archive(char *archiveFile, char *filePath) {
-//     // Function definition
-// }
-
-// void print_hierarchy(char *archiveFile) {
-//     // Function definition
-// }
-
-void extract_file(int fd, MyzNode *file_entry, const char *basePath);
-
-void extract_directory(int fd, List list, ListNode *current, const char *basePath) {
-    MyzNode *dir_entry = list_value(list, *current);
-    char dirPath[PATH_MAX];
-    snprintf(dirPath, sizeof(dirPath), "%s/%s", basePath, dir_entry->name);
-
-    // Print the path of the directory
-    printf("Extracting directory: %s\n", dirPath);
-
-    if (mkdir(dirPath, dir_entry->stat.st_mode) == -1 && errno != EEXIST) {
-        perror("mkdir");
-        return;
-    }
-
-    int numChildren = dir_entry->dirContents;
-    *current = list_next(list, *current); // Move to the first child
-
-    for (int i = 0; i < numChildren; ++i) {
-        MyzNode *child = list_value(list, *current);
-        if (child->type == MYZ_NODE_TYPE_DIR) {
-            extract_directory(fd, list, current, dirPath);
-        } else {
-            extract_file(fd, child, dirPath);
-            *current = list_next(list, *current);
-        }
-    }
-}
-
 void extract_file(int fd, MyzNode *file_entry, const char *basePath) {
     char filePath[PATH_MAX];
     snprintf(filePath, sizeof(filePath), "%s/%s", basePath, file_entry->name);
@@ -467,6 +332,30 @@ void extract_file(int fd, MyzNode *file_entry, const char *basePath) {
         bytesToRead -= bytesRead;
     }
     close(file_fd);
+}
+
+void extract_directory(int fd, List list, ListNode *current, const char *basePath) {
+    MyzNode *dir_entry = list_value(list, *current);
+    char dirPath[PATH_MAX];
+    snprintf(dirPath, sizeof(dirPath), "%s/%s", basePath, dir_entry->name);
+
+    if (mkdir(dirPath, dir_entry->stat.st_mode) == -1 && errno != EEXIST) {
+        perror("mkdir");
+        return;
+    }
+
+    int numChildren = dir_entry->dirContents;
+    *current = list_next(list, *current); // Move to the first child
+
+    for (int i = 0; i < numChildren; ++i) {
+        MyzNode *child = list_value(list, *current);
+        if (child->type == MYZ_NODE_TYPE_DIR) {
+            extract_directory(fd, list, current, dirPath);
+        } else {
+            extract_file(fd, child, dirPath);
+            *current = list_next(list, *current);
+        }
+    }
 }
 
 void extract_archive(char *archiveFile, char **fileList) {
@@ -500,18 +389,6 @@ void extract_archive(char *archiveFile, char **fileList) {
     while (read(fd, &entry, sizeof(MyzNode)) == sizeof(MyzNode)) {
         MyzNode *node = malloc(sizeof(MyzNode));
         *node = entry;
-
-        // Print the metadata
-        printf("Name: %s\n", node->name);
-        printf("Type: %d\n", node->type);
-        printf("Mode: %o\n", node->stat.st_mode);
-        printf("UID: %d\n", node->stat.st_uid);
-        printf("GID: %d\n", node->stat.st_gid);
-        printf("Size: %ld\n", node->stat.st_size);
-        printf("Access Time: %ld\n", node->stat.st_atime);
-        printf("Modification Time: %ld\n", node->stat.st_mtime);
-        printf("Change Time: %ld\n", node->stat.st_ctime);
-        printf("Path: %s\n", node->path);
 
         list_insert_after(list, list_last(list), node);
     }
