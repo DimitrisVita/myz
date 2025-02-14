@@ -334,10 +334,27 @@ void extract_archive(char *archiveFile, char **fileList) {
     ListNode current = list_first(list);
     while (current != NULL) {
         MyzNode *current_entry = list_value(current);
-        if (current_entry->type == MYZ_NODE_TYPE_DIR) {
-            extract_directory(fd, list, &current, ".");
+        bool extract = true;
+
+        // If a file list is provided, check if the current entry is in the list
+        if (fileList != NULL && fileList[0] != NULL) {
+            extract = false;
+            for (int i = 0; fileList[i] != NULL; i++) {
+                if (strcmp(current_entry->path, fileList[i]) == 0) {
+                    extract = true;
+                    break;
+                }
+            }
+        }
+
+        if (extract) {
+            if (current_entry->type == MYZ_NODE_TYPE_DIR) {
+                extract_directory(fd, list, &current, ".");
+            } else {
+                extract_file(fd, current_entry, ".");
+                current = list_next(current);
+            }
         } else {
-            extract_file(fd, current_entry, ".");
             current = list_next(current);
         }
     }
