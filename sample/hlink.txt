@@ -1,1 +1,0 @@
-hard.txt is a hardlink pointing to hlink.txt.

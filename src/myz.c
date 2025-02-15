@@ -138,6 +138,7 @@ int processDirectory(char *dirPath, List list, bool gzip, uint64_t *totalDataByt
 
         // Initialize the node for the file or directory and allocate memory dynamically
         MyzNode *node = malloc(sizeof(MyzNode));
+        memset(node, 0, sizeof(MyzNode)); // Initialize memory to zero
         node->stat = st;
         strncpy(node->name, entry->d_name, MAX_NAME_LEN - 1);
         node->name[MAX_NAME_LEN - 1] = '\0';
@@ -186,6 +187,7 @@ void create_archive(char *archiveFile, char **fileList, bool gzip) {
 
         // Initialize the node for the file or directory
         MyzNode *node = malloc(sizeof(MyzNode));
+        memset(node, 0, sizeof(MyzNode)); // Initialize memory to zero
         node->stat = st;    // Copy the file information
         
         // Get the name of the file or directory
@@ -233,7 +235,12 @@ void create_archive(char *archiveFile, char **fileList, bool gzip) {
     close(fd);
     
     // Free dynamically allocated memory
-    // TO DO
+    ListNode node = list_first(list);
+    while (node != NULL) {
+        MyzNode *entry = list_value(node);
+        free(entry);
+        node = list_next(node);
+    }
 
     // Destroy the list
     list_destroy(list);
@@ -325,6 +332,7 @@ void extract_archive(char *archiveFile, char **fileList) {
     MyzNode entry;
     while (read(fd, &entry, sizeof(MyzNode)) == sizeof(MyzNode)) {
         MyzNode *node = malloc(sizeof(MyzNode));
+        memset(node, 0, sizeof(MyzNode)); // Initialize memory to zero
         *node = entry;
 
         list_insert_after(list, list_last(list), node);
@@ -362,8 +370,14 @@ void extract_archive(char *archiveFile, char **fileList) {
     // Close the archive file
     close(fd);
 
-    // Destroy the list
-    // TO DO
+    // Free dynamically allocated memory
+    ListNode node = list_first(list);
+    while (node != NULL) {
+        MyzNode *entry = list_value(node);
+        free(entry);
+        node = list_next(node);
+    }
 
+    // Destroy the list
     list_destroy(list);
 }
