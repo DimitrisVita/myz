@@ -165,9 +165,7 @@ int processDirectory(char *dirPath, List list, bool gzip, uint64_t *totalDataByt
 
         // Process the directory recursively
         if (node->type == MYZ_NODE_TYPE_DIR) {
-            int subDirContents = processDirectory(fullPath, list, gzip, totalDataBytes);
-            node->dirContents = subDirContents;
-            numDirContents += subDirContents;
+            node->dirContents = processDirectory(fullPath, list, gzip, totalDataBytes);
         }
 
         // Increment the number of directory contents
@@ -177,7 +175,7 @@ int processDirectory(char *dirPath, List list, bool gzip, uint64_t *totalDataByt
     // Close the directory
     closedir(dir);
 
-    return numDirContents;
+    return numDirContents;  // Return only the immediate children
 }
 
 // Function to create an archive
@@ -334,6 +332,7 @@ void extract_directory(int fd, List list, ListNode *current, const char *basePat
 
     // Extract each child
     for (int i = 0; i < numChildren; ++i) {
+        printf("Extracting %d of %d\n", i + 1, numChildren);
         MyzNode *child = list_value(*current);
         if (child->type == MYZ_NODE_TYPE_DIR) {
             extract_directory(fd, list, current, dirPath);
