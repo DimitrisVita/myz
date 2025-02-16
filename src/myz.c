@@ -818,3 +818,117 @@ void append_archive(char *archiveFile, char **fileList, bool gzip) {
     // Destroy the list
     list_destroy(list);
 }
+
+// Function to delete files and directories from an existing archive
+void delete_archive(char *archiveFile, char **fileList) {
+    // Open the archive file
+    int fd = open(archiveFile, O_RDWR);
+    if (fd == -1) {
+        perror("open");
+        return;
+    }
+
+    // Read the header of the archive
+    MyzHeader header;
+    if (read(fd, &header, sizeof(MyzHeader)) != sizeof(MyzHeader)) {
+        perror("read");
+        close(fd);
+        return;
+    }
+
+    // Check if the archive file is valid
+    if (strncmp(header.magic, "MYZ", 4) != 0) {
+        fprintf(stderr, "Invalid archive file\n");
+        close(fd);
+        return;
+    }
+
+    // Move the file descriptor to the metadata offset
+    if (lseek(fd, header.metadata_offset, SEEK_SET) == -1) {
+        perror("lseek");
+        close(fd);
+        return;
+    }
+
+    // Read the list of archive entries
+    List list = list_create(NULL);
+    MyzNode entry;
+    while (read(fd, &entry, sizeof(MyzNode)) == sizeof(MyzNode)) {
+        MyzNode *node = malloc(sizeof(MyzNode));
+        memset(node, 0, sizeof(MyzNode)); // Initialize memory to zero
+        *node = entry;
+
+        list_insert_after(list, list_last(list), node);
+    }
+
+    // Remove the specified files and directories from the list
+    for (int i = 0; fileList[i] != NULL; i++) {
+        ListNode node = list_first(list);
+        ListNode prev = NULL;
+        while (node != NULL) {
+            MyzNode *entry = list_value(node);
+            if (strcmp(entry->path, fileList[i]) == 0) {
+                // Update the parent directory's dirContents
+                ListNode parentNode = list_first(list);
+                while (parentNode != NULL) {
+                    MyzNode *parentEntry = list_value(parentNode);
+                    if (parentEntry->type == MYZ_NODE_TYPE_DIR && 
+                        strncmp(entry->path, parentEntry->path, strlen(parentEntry->path)) == 0) {
+                        parentEntry->dirContents--;
+                        break;
+                    }
+                    parentNode = list_next(parentNode);
+                }
+
+                // If the entry is a directory, remove its contents
+                if (entry->type == MYZ_NODE_TYPE_DIR) {
+                    ListNode childNode = list_next(node);
+                    while (childNode != NULL) {
+                        MyzNode *childEntry = list_value(childNode);
+                        if (strncmp(childEntry->path, entry->path, strlen(entry->path)) == 0) {
+                            ListNode nextChildNode = list_next(childNode);
+                            list_remove_after(list, node);
+                            free(childEntry);
+                            childNode = nextChildNode;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                node = list_next(node);
+                list_remove_after(list, prev);
+                free(entry);
+            } else {
+                prev = node;
+                node = list_next(node);
+            }
+        }
+    }
+
+    // Update the header of the archive
+    uint64_t totalDataBytes = 0;
+    ListNode node = list_first(list);
+    while (node != NULL) {
+        MyzNode *entry = list_value(node);
+        if (entry->type == MYZ_NODE_TYPE_FILE) {
+            totalDataBytes += entry->stat.st_size;
+        }
+        node = list_next(node);
+    }
+    header.total_bytes = sizeof(MyzHeader) + sizeof(MyzNode) * list_size(list) + totalDataBytes;
+    header.metadata_offset = sizeof(MyzHeader) + totalDataBytes;
+
+    // Transfer the updated list to the archive file
+    int new_fd = transferListToFile(header, list, archiveFile);
+    if (new_fd == -1) {
+        list_destroy(list);
+        return;
+    }
+
+    // Close the archive file
+    close(new_fd);
+
+    // Destroy the list
+    list_destroy(list);
+}
