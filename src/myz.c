@@ -255,20 +255,45 @@ void create_archive(char *archiveFile, char **fileList, bool gzip) {
 
 // Function to extract an archive
 void extract_file(int fd, MyzNode *file_entry, const char *basePath) {
-    // Construct the file path
+    // Remove any leading "./" from the base path
+    while (strncmp(basePath, "./", 2) == 0) {
+        basePath += 2;
+    }
+
+    // Remove any leading "./" from the file name as well
+    const char *fileName = file_entry->name;
+    while (strncmp(fileName, "./", 2) == 0) {
+        fileName += 2;
+    }
+
+    // Construct the file path using the cleaned file name
     char filePath[PATH_MAX];
-    snprintf(filePath, sizeof(filePath), "%s/%s", basePath, file_entry->name);
+    snprintf(filePath, sizeof(filePath), "%s/%s", basePath, fileName);
 
     // Check if the file already exists and append a suffix if necessary
     int suffix = 1;
     char originalFilePath[PATH_MAX];
     strcpy(originalFilePath, filePath);
+    char *dot = strrchr(originalFilePath, '.');
     while (access(filePath, F_OK) == 0) {
-        snprintf(filePath, sizeof(filePath), "%s/%s(%d)", basePath, file_entry->name, suffix++);
+        if (dot) {
+            int prefix_length = (int)(dot - originalFilePath);
+            snprintf(filePath, sizeof(filePath), "%s/%.*s(%d)%s",
+                     basePath, prefix_length, originalFilePath, suffix++, dot);
+        } else {
+            snprintf(filePath, sizeof(filePath), "%s/%s(%d)",
+                     basePath, fileName, suffix++);
+        }
+    }
+
+    // Remove any leading "./" from the file path before printing
+    const char *cleanFilePath = filePath;
+    while (strncmp(cleanFilePath, "./", 2) == 0) {
+        cleanFilePath += 2;
     }
 
     // Print the original archive path
-    printf("'%s' original archive path: '%s'\n", filePath, file_entry->path);
+    printf("'%s' original archive path: '%s'\n", cleanFilePath, file_entry->path);
 
     int file_fd = open(filePath, O_WRONLY | O_CREAT | O_TRUNC, file_entry->stat.st_mode);
 
@@ -286,6 +311,7 @@ void extract_file(int fd, MyzNode *file_entry, const char *basePath) {
     }
     close(file_fd);
 }
+
 
 // Function to extract an archive
 void extract_directory(int fd, List list, ListNode *current, const char *basePath) {
