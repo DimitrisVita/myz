@@ -13,6 +13,8 @@ int main(int argc, char *argv[]) {
         create_archive(args.archiveFile, args.fileList, args.gzip);
     } else if (args.export) {
         extract_archive(args.archiveFile, args.fileList);
+    } else if (args.metadata && !args.fileList) {
+        print_metadata(args.archiveFile);
     } else {
         print_usage();
         return 1;

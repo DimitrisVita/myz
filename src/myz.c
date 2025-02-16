@@ -151,12 +151,12 @@ int processDirectory(char *dirPath, List list, bool gzip, uint64_t *totalDataByt
         node->name[MAX_NAME_LEN - 1] = '\0';
         strncpy(node->path, fullPath, MAX_PATH_LEN - 1);
         node->path[MAX_PATH_LEN - 1] = '\0';
-        node->type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : MYZ_NODE_TYPE_FILE;
+        node->type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : 
+                      S_ISLNK(st.st_mode) ? MYZ_NODE_TYPE_SYMLINK : 
+                      S_ISREG(st.st_mode) ? MYZ_NODE_TYPE_FILE : MYZ_NODE_TYPE_HARDLINK;
         node->data_offset = 0;    // This will be set later
         node->compressed = gzip;
         node->dirContents = (node->type == MYZ_NODE_TYPE_DIR) ? 0 : -1;
-
-        // Add the file size to the total bytes
         if (node->type == MYZ_NODE_TYPE_FILE)
             *totalDataBytes += node->stat.st_size;
 
@@ -425,4 +425,64 @@ void extract_archive(char *archiveFile, char **fileList) {
 
     // Destroy the list
     list_destroy(list);
+}
+
+// Print the metadata of the archive
+void print_metadata(char *archiveFile) {
+    // Open the archive file
+    int fd = open(archiveFile, O_RDONLY);
+    if (fd == -1) {
+        perror("open");
+        return;
+    }
+
+    // Read the header of the archive
+    MyzHeader header;
+    if (read(fd, &header, sizeof(MyzHeader)) != sizeof(MyzHeader)) {
+        perror("read");
+        close(fd);
+        return;
+    }
+
+    // Check if the archive file is valid
+    if (strncmp(header.magic, "MYZ", 4) != 0) {
+        fprintf(stderr, "Invalid archive file\n");
+        close(fd);
+        return;
+    }
+
+    // Print the header information
+    printf("=== Archive Header ===\n");
+    printf("Magic: %s\n", header.magic);
+    printf("Total bytes: %lu\n", header.total_bytes);
+    printf("Metadata offset: %lu\n", header.metadata_offset);
+
+    // Move the file descriptor to the metadata offset
+    if (lseek(fd, header.metadata_offset, SEEK_SET) == -1) {
+        perror("lseek");
+        close(fd);
+        return;
+    }
+
+    // Read and print the list of archive entries
+    MyzNode entry;
+    printf("\n=== Archive Metadata ===\n");
+    while (read(fd, &entry, sizeof(MyzNode)) == sizeof(MyzNode)) {
+        printf("Name: %s\n", entry.name);
+        printf("Path: %s\n", entry.path);
+        printf("Type: %s\n", 
+               entry.type == MYZ_NODE_TYPE_DIR ? "Directory" : 
+               entry.type == MYZ_NODE_TYPE_FILE ? "File" : 
+               entry.type == MYZ_NODE_TYPE_SYMLINK ? "Symlink" : 
+               entry.type == MYZ_NODE_TYPE_HARDLINK ? "Hardlink" : "Unknown");
+        printf("Data offset: %ld\n", entry.data_offset);
+        printf("Size: %ld bytes\n", entry.stat.st_size);
+        printf("Compressed: %s\n", entry.compressed ? "Yes" : "No");
+        if (entry.type == MYZ_NODE_TYPE_DIR)
+            printf("Number of directory contents: %d\n", entry.dirContents);
+        printf("\n");
+    }
+
+    // Close the archive file
+    close(fd);
 }

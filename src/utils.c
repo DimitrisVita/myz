@@ -96,15 +96,22 @@ int parse_arguments(int argc, char *argv[], CommandLineArgs *args) {
     }
 
     // Copy the list of files and directories to the args structure
-    args->fileList = malloc((argc - optind + 1) * sizeof(char *));
-    for (int i = 0; i < argc - optind; i++) {
-        args->fileList[i] = strdup(argv[optind + i]);
+    if (optind < argc) {
+        args->fileList = malloc((argc - optind + 1) * sizeof(char *));
+        for (int i = 0; i < argc - optind; i++) {
+            args->fileList[i] = strdup(argv[optind + i]);
+        }
+        args->fileList[argc - optind] = NULL; // Terminate with NULL
+        args->numFiles = argc - optind;
+    } else {
+        args->fileList = NULL;
+        args->numFiles = 0;
     }
-    args->fileList[argc - optind] = NULL; // Terminate with NULL
-    args->numFiles = argc - optind;
 
-    // Filter paths
-    args->fileList = filter_paths(args->fileList, &args->numFiles);
+    if (args->fileList != NULL) {
+        // Filter paths
+        args->fileList = filter_paths(args->fileList, &args->numFiles);
+    }
 
     return 0;
 }
