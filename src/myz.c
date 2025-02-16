@@ -663,3 +663,158 @@ void print_hierarchy(char *archiveFile) {
     // Destroy the list
     list_destroy(list);
 }
+
+// Function to check if a path exists in the archive
+bool path_exists_in_archive(List list, const char *path) {
+    ListNode node = list_first(list);
+    while (node != NULL) {
+        MyzNode *entry = list_value(node);
+        if (strcmp(entry->path, path) == 0) {
+            return true;
+        }
+        node = list_next(node);
+    }
+    return false;
+}
+
+// Function to filter paths, keeping the most generic path
+void filter_paths_append(List list, char **fileList) {
+    for (int i = 0; fileList[i] != NULL; i++) {
+        ListNode node = list_first(list);
+        ListNode prev = NULL;
+        while (node != NULL) {
+            MyzNode *entry = list_value(node);
+            if (strncmp(entry->path, fileList[i], strlen(fileList[i])) == 0) {
+                node = list_next(node);
+                list_remove_after(list, prev);
+                free(entry);
+            } else {
+                prev = node;
+                node = list_next(node);
+            }
+        }
+    }
+}
+
+// Function to append files and directories to an existing archive
+void append_archive(char *archiveFile, char **fileList, bool gzip) {
+    // Open the archive file
+    int fd = open(archiveFile, O_RDWR);
+    if (fd == -1) {
+        perror("open");
+        return;
+    }
+
+    // Read the header of the archive
+    MyzHeader header;
+    if (read(fd, &header, sizeof(MyzHeader)) != sizeof(MyzHeader)) {
+        perror("read");
+        close(fd);
+        return;
+    }
+
+    // Check if the archive file is valid
+    if (strncmp(header.magic, "MYZ", 4) != 0) {
+        fprintf(stderr, "Invalid archive file\n");
+        close(fd);
+        return;
+    }
+
+    // Move the file descriptor to the metadata offset
+    if (lseek(fd, header.metadata_offset, SEEK_SET) == -1) {
+        perror("lseek");
+        close(fd);
+        return;
+    }
+
+    // Read the list of archive entries
+    List list = list_create(NULL);
+    MyzNode entry;
+    while (read(fd, &entry, sizeof(MyzNode)) == sizeof(MyzNode)) {
+        MyzNode *node = malloc(sizeof(MyzNode));
+        memset(node, 0, sizeof(MyzNode)); // Initialize memory to zero
+        *node = entry;
+
+        list_insert_after(list, list_last(list), node);
+    }
+
+    // Filter paths to remove specific files if their parent directory is added
+    filter_paths_append(list, fileList);
+
+    uint64_t totalDataBytes = 0;    // Total number of data bytes in the archive
+
+    // Process each file and directory in the list
+    for (int i = 0; fileList[i] != NULL; i++) {
+        struct stat st; // File information
+        if (lstat(fileList[i], &st) == -1) {
+            perror("lstat");
+            list_destroy(list);
+            return;
+        }
+
+        // Check if the path already exists in the archive
+        if (path_exists_in_archive(list, fileList[i])) {
+            printf("Path '%s' already exists in the archive.\n", fileList[i]);
+            continue;
+        }
+
+        // Check if the directory exists
+        if (S_ISDIR(st.st_mode)) {
+            DIR *dir = opendir(fileList[i]);
+            if (dir == NULL) {
+                perror("opendir");
+                list_destroy(list);
+                return;
+            }
+            closedir(dir);
+        }
+
+        // Initialize the node for the file or directory
+        MyzNode *node = malloc(sizeof(MyzNode));
+        memset(node, 0, sizeof(MyzNode)); // Initialize memory to zero
+        node->stat = st;    // Copy the file information
+        
+        // Get the name of the file or directory
+        char *lastPart = strrchr(fileList[i], '/');
+        if (lastPart == NULL) { // No directory part
+            strncpy(node->name, fileList[i], MAX_NAME_LEN - 1);
+            node->name[MAX_NAME_LEN - 1] = '\0';
+        } else {    // Directory part exists
+            strncpy(node->name, lastPart + 1, MAX_NAME_LEN - 1);
+            node->name[MAX_NAME_LEN - 1] = '\0';
+        }
+        strncpy(node->path, fileList[i], MAX_PATH_LEN - 1); // Copy the path
+        node->path[MAX_PATH_LEN - 1] = '\0';
+        node->type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : MYZ_NODE_TYPE_FILE;  // Set the type
+        node->data_offset = 0;    // This will be set later
+        node->dirContents = (node->type == MYZ_NODE_TYPE_DIR) ? 0 : -1; // Set the number of directory contents
+
+        // Add the file size to the total bytes
+        if (node->type == MYZ_NODE_TYPE_FILE)
+            totalDataBytes += node->stat.st_size;
+
+        // Add the node to the list
+        list_insert_after(list, list_last(list), node);
+
+        // Process the directory recursively
+        if (node->type == MYZ_NODE_TYPE_DIR)
+            node->dirContents = processDirectory(fileList[i], list, gzip, &totalDataBytes);
+    }
+
+    // Update the header of the archive
+    header.total_bytes += sizeof(MyzNode) * list_size(list) + totalDataBytes;
+    header.metadata_offset += totalDataBytes;
+
+    // Transfer the list to the archive file
+    int new_fd = transferListToFile(header, list, archiveFile);
+    if (new_fd == -1) {
+        list_destroy(list);
+        return;
+    }
+
+    // Close the archive file
+    close(new_fd);
+    
+    // Destroy the list
+    list_destroy(list);
+}

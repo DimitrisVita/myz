@@ -19,6 +19,9 @@ int main(int argc, char *argv[]) {
         query_archive(args.archiveFile, args.fileList);
     } else if (args.print && !args.fileList) {
         print_hierarchy(args.archiveFile);
+    } else if (args.append && args.fileList) {
+        append_archive(args.archiveFile, args.fileList, args.gzip);
+    
     } else {
         print_usage();
         return 1;

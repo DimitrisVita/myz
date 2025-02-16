@@ -41,6 +41,9 @@ void list_insert_after(List list, ListNode node, void* value) {
 }
 
 void list_remove_after(List list, ListNode node) {
+	if (node == NULL) {
+		node = list->dummy;
+	}
 	ListNode to_remove = node->next;
 	if (to_remove != NULL) {
 		node->next = to_remove->next;
