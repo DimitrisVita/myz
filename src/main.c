@@ -15,6 +15,10 @@ int main(int argc, char *argv[]) {
         extract_archive(args.archiveFile, args.fileList);
     } else if (args.metadata && !args.fileList) {
         print_metadata(args.archiveFile);
+    } else if (args.query && args.fileList) {
+        printf("Querying archive\n");
+    } else if (args.print && !args.fileList) {
+        print_hierarchy(args.archiveFile);
     } else {
         print_usage();
         return 1;

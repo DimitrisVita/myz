@@ -480,9 +480,102 @@ void print_metadata(char *archiveFile) {
         printf("Compressed: %s\n", entry.compressed ? "Yes" : "No");
         if (entry.type == MYZ_NODE_TYPE_DIR)
             printf("Number of directory contents: %d\n", entry.dirContents);
+
+        // Print owner, group, and access rights
+        printf("Owner: %d\n", entry.stat.st_uid);
+        printf("Group: %d\n", entry.stat.st_gid);
+        printf("Access rights: %o\n", entry.stat.st_mode & 0777);
         printf("\n");
     }
 
     // Close the archive file
     close(fd);
+}
+
+// Function to print the hierarchy of the archive
+void print_hierarchy(char *archiveFile) {
+    // Open the archive file
+    int fd = open(archiveFile, O_RDONLY);
+    if (fd == -1) {
+        perror("open");
+        return;
+    }
+
+    // Read the header of the archive
+    MyzHeader header;
+    if (read(fd, &header, sizeof(MyzHeader)) != sizeof(MyzHeader)) {
+        perror("read");
+        close(fd);
+        return;
+    }
+
+    // Check if the archive file is valid
+    if (strncmp(header.magic, "MYZ", 4) != 0) {
+        fprintf(stderr, "Invalid archive file\n");
+        close(fd);
+        return;
+    }
+
+    // Move the file descriptor to the metadata offset
+    if (lseek(fd, header.metadata_offset, SEEK_SET) == -1) {
+        perror("lseek");
+        close(fd);
+        return;
+    }
+
+    // Read the list of archive entries
+    List list = list_create(NULL);
+    MyzNode entry;
+    while (read(fd, &entry, sizeof(MyzNode)) == sizeof(MyzNode)) {
+        MyzNode *node = malloc(sizeof(MyzNode));
+        memset(node, 0, sizeof(MyzNode)); // Initialize memory to zero
+        *node = entry;
+
+        list_insert_after(list, list_last(list), node);
+    }
+
+    // Print the hierarchy of the archive
+    printf("=== Archive Hierarchy ===\n");
+    ListNode current = list_first(list);
+    while (current != NULL) {
+        MyzNode *current_entry = list_value(current);
+        int depth = 0;
+
+        // Print the hierarchy
+        while (current_entry->type == MYZ_NODE_TYPE_DIR) {
+            for (int i = 0; i < depth; i++) {
+                printf("  ");
+            }
+            printf("%s/\n", current_entry->name);
+
+            // Move to the next entry
+            current = list_next(current);
+            if (current == NULL) break;
+            current_entry = list_value(current);
+            depth++;
+        }
+
+        // Print the file
+        for (int i = 0; i < depth; i++) {
+            printf("  ");
+        }
+        printf("%s\n", current_entry->name);
+
+        // Move to the next entry
+        current = list_next(current);
+    }
+
+    // Close the archive file
+    close(fd);
+
+    // Free dynamically allocated memory
+    ListNode node = list_first(list);
+    while (node != NULL) {
+        MyzNode *entry = list_value(node);
+        free(entry);
+        node = list_next(node);
+    }
+
+    // Destroy the list
+    list_destroy(list);
 }
