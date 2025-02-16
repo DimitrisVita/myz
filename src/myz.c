@@ -492,6 +492,107 @@ void print_metadata(char *archiveFile) {
     close(fd);
 }
 
+// Function to query an archive file, given the exact file path
+void query_archive(char *archiveFile, char **fileList) {
+    // Open the archive file
+    int fd = open(archiveFile, O_RDONLY);
+    if (fd == -1) {
+        perror("open");
+        return;
+    }
+
+    // Read the header of the archive
+    MyzHeader header;
+    if (read(fd, &header, sizeof(MyzHeader)) != sizeof(MyzHeader)) {
+        perror("read");
+        close(fd);
+        return;
+    }
+
+    // Check if the archive file is valid
+    if (strncmp(header.magic, "MYZ", 4) != 0) {
+        fprintf(stderr, "Invalid archive file\n");
+        close(fd);
+        return;
+    }
+
+    // Move the file descriptor to the metadata offset
+    if (lseek(fd, header.metadata_offset, SEEK_SET) == -1) {
+        perror("lseek");
+        close(fd);
+        return;
+    }
+
+    // Read the list of archive entries
+    List list = list_create(NULL);
+    MyzNode entry;
+    while (read(fd, &entry, sizeof(MyzNode)) == sizeof(MyzNode)) {
+        MyzNode *node = malloc(sizeof(MyzNode));
+        memset(node, 0, sizeof(MyzNode)); // Initialize memory to zero
+        *node = entry;
+
+        list_insert_after(list, list_last(list), node);
+    }
+
+    // Query the archive entries
+    ListNode current = list_first(list);
+    while (current != NULL) {
+        MyzNode *current_entry = list_value(current);
+        bool found = false;
+
+        // Check if the current entry is in the list
+        for (int i = 0; fileList[i] != NULL; i++) {
+            if (strcmp(current_entry->path, fileList[i]) == 0) {
+                found = true;
+                break;
+            }
+        }
+
+        // Print the metadata of the current entry
+        if (found) {
+            printf("=== Archive Metadata ===\n");
+            printf("Name: %s\n", current_entry->name);
+            printf("Path: %s\n", current_entry->path);
+            printf("Type: %s\n", 
+                   current_entry->type == MYZ_NODE_TYPE_DIR ? "Directory" : 
+                   current_entry->type == MYZ_NODE_TYPE_FILE ? "File" : 
+                   current_entry->type == MYZ_NODE_TYPE_SYMLINK ? "Symlink" : 
+                   current_entry->type == MYZ_NODE_TYPE_HARDLINK ? "Hardlink" : "Unknown");
+            if (current_entry->type == MYZ_NODE_TYPE_FILE)
+                printf("Data offset: %ld\n", current_entry->data_offset);
+            printf("Size: %ld bytes\n", current_entry->stat.st_size);
+            printf("Compressed: %s\n", current_entry->compressed ? "Yes" : "No");
+            if (current_entry->type == MYZ_NODE_TYPE_DIR)
+                printf("Number of directory contents: %d\n", current_entry->dirContents);
+            
+            // Print owner, group, and access rights
+            printf("Owner: %d\n", current_entry->stat.st_uid);
+            printf("Group: %d\n", current_entry->stat.st_gid);
+            printf("Access rights: %o\n", current_entry->stat.st_mode & 0777);
+            printf("\n");
+
+            // Break the loop if the file is found
+            break;
+        } else {
+            current = list_next(current);
+        }
+    }
+
+    // Close the archive file
+    close(fd);
+
+    // Free dynamically allocated memory
+    ListNode node = list_first(list);
+    while (node != NULL) {
+        MyzNode *entry = list_value(node);
+        free(entry);
+        node = list_next(node);
+    }
+
+    // Destroy the list
+    list_destroy(list);
+}
+
 // Function to print the hierarchy of the archive
 void print_hierarchy(char *archiveFile) {
     // Open the archive file
