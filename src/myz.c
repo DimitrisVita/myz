@@ -164,8 +164,11 @@ int processDirectory(char *dirPath, List list, bool gzip, uint64_t *totalDataByt
         list_insert_after(list, list_last(list), node);
 
         // Process the directory recursively
-        if (node->type == MYZ_NODE_TYPE_DIR)
-            numDirContents += processDirectory(fullPath, list, gzip, totalDataBytes);
+        if (node->type == MYZ_NODE_TYPE_DIR) {
+            int subDirContents = processDirectory(fullPath, list, gzip, totalDataBytes);
+            node->dirContents = subDirContents;
+            numDirContents += subDirContents;
+        }
 
         // Increment the number of directory contents
         numDirContents++;
