@@ -259,7 +259,18 @@ void extract_file(int fd, MyzNode *file_entry, const char *basePath) {
     char filePath[PATH_MAX];
     snprintf(filePath, sizeof(filePath), "%s/%s", basePath, file_entry->name);
 
-    int file_fd = open(filePath, O_WRONLY|O_CREAT|O_TRUNC, file_entry->stat.st_mode);
+    // Check if the file already exists and append a suffix if necessary
+    int suffix = 1;
+    char originalFilePath[PATH_MAX];
+    strcpy(originalFilePath, filePath);
+    while (access(filePath, F_OK) == 0) {
+        snprintf(filePath, sizeof(filePath), "%s/%s(%d)", basePath, file_entry->name, suffix++);
+    }
+
+    // Print the original archive path
+    printf("'%s' original archive path: '%s'\n", filePath, file_entry->path);
+
+    int file_fd = open(filePath, O_WRONLY | O_CREAT | O_TRUNC, file_entry->stat.st_mode);
 
     lseek(fd, file_entry->data_offset, SEEK_SET);   // Move to the data offset
 
