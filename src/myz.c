@@ -90,6 +90,13 @@ int transferListToFile(MyzHeader header, List list, char *archiveFile) {
             metadataBytesWritten += sizeof(MyzNode);    // Increment the number of metadata bytes written
 
         } else if (entry->type == MYZ_NODE_TYPE_DIR) {
+            // Move the fd to the metadata section. We put the metadata at the end of the archive file
+            if (lseek(fd, header.metadata_offset + metadataBytesWritten, SEEK_SET) == -1) {
+                perror("lseek");
+                close(fd);
+                return -1;
+            }
+
             // Write the directory metadata to the archive file
             if (write(fd, entry, sizeof(MyzNode)) == -1) {
                 perror("write");
