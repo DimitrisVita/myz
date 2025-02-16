@@ -332,7 +332,6 @@ void extract_directory(int fd, List list, ListNode *current, const char *basePat
 
     // Extract each child
     for (int i = 0; i < numChildren; ++i) {
-        printf("Extracting %d of %d\n", i + 1, numChildren);
         MyzNode *child = list_value(*current);
         if (child->type == MYZ_NODE_TYPE_DIR) {
             extract_directory(fd, list, current, dirPath);
