@@ -548,34 +548,17 @@ void query_archive(char *archiveFile, char **fileList) {
             }
         }
 
-        // Print the metadata of the current entry
+        // Print a positive or negative answer
         if (found) {
-            printf("=== Archive Metadata ===\n");
-            printf("Name: %s\n", current_entry->name);
-            printf("Path: %s\n", current_entry->path);
-            printf("Type: %s\n", 
-                   current_entry->type == MYZ_NODE_TYPE_DIR ? "Directory" : 
-                   current_entry->type == MYZ_NODE_TYPE_FILE ? "File" : 
-                   current_entry->type == MYZ_NODE_TYPE_SYMLINK ? "Symlink" : 
-                   current_entry->type == MYZ_NODE_TYPE_HARDLINK ? "Hardlink" : "Unknown");
-            if (current_entry->type == MYZ_NODE_TYPE_FILE)
-                printf("Data offset: %ld\n", current_entry->data_offset);
-            printf("Size: %ld bytes\n", current_entry->stat.st_size);
-            printf("Compressed: %s\n", current_entry->compressed ? "Yes" : "No");
-            if (current_entry->type == MYZ_NODE_TYPE_DIR)
-                printf("Number of directory contents: %d\n", current_entry->dirContents);
-            
-            // Print owner, group, and access rights
-            printf("Owner: %d\n", current_entry->stat.st_uid);
-            printf("Group: %d\n", current_entry->stat.st_gid);
-            printf("Access rights: %o\n", current_entry->stat.st_mode & 0777);
-            printf("\n");
-
-            // Break the loop if the file is found
+            printf("File '%s' found in the archive.\n", current_entry->path);
             break;
         } else {
             current = list_next(current);
         }
+    }
+
+    if (current == NULL) {
+        printf("File not found in the archive.\n");
     }
 
     // Close the archive file
