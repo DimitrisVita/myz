@@ -2,6 +2,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <sys/wait.h>  // Προσθήκη αυτής της γραμμής
+#include <dirent.h>  // Προσθήκη αυτής της γραμμής
 
 // Function to transfer the list of archive entries to the archive file
 int transferListToFile(MyzHeader header, List list, char *archiveFile) {
@@ -179,7 +181,66 @@ int processDirectory(char *dirPath, List list, bool gzip, uint64_t *totalDataByt
 }
 
 // Function to create an archive
+void compress_files_recursive(char *path) {
+    struct stat st;
+    if (lstat(path, &st) == -1) {
+        perror("lstat");
+        return;
+    }
+
+    if (S_ISDIR(st.st_mode)) {
+        DIR *dir = opendir(path);
+        if (dir == NULL) {
+            perror("opendir");
+            return;
+        }
+
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+                continue;
+
+            char fullPath[PATH_MAX];
+            snprintf(fullPath, PATH_MAX, "%s/%s", path, entry->d_name);
+            compress_files_recursive(fullPath);
+        }
+
+        closedir(dir);
+    } else if (S_ISREG(st.st_mode)) {
+        pid_t pid = fork();
+        if (pid == -1) {
+            perror("fork");
+            exit(EXIT_FAILURE);
+        } else if (pid == 0) {  // Child
+            execlp("gzip", "gzip", "-k", path, NULL);
+            perror("exec");  // Only if exec fails
+            exit(EXIT_FAILURE);
+        } else {
+            wait(NULL);  // Wait for the child process to finish
+            // Update the size of the compressed file
+            char gzPath[PATH_MAX];
+            snprintf(gzPath, PATH_MAX, "%s.gz", path);
+            struct stat gzSt;
+            if (stat(gzPath, &gzSt) == 0) {
+                st.st_size = gzSt.st_size;
+            }
+        }
+    }
+}
+
+void compress_files(char **files) {
+    for (int i = 0; files[i] != NULL; i++) {
+        compress_files_recursive(files[i]);
+    }
+
+    while (wait(NULL) > 0);
+}
+
 void create_archive(char *archiveFile, char **fileList, bool gzip) {
+    if (gzip) {
+        compress_files(fileList);
+    }
+
     List list = list_create(NULL);  // List to store the file and directory information
 
     uint64_t totalDataBytes = 0;    // Total number of data bytes in the archive
@@ -209,9 +270,25 @@ void create_archive(char *archiveFile, char **fileList, bool gzip) {
         }
         strncpy(node->path, fileList[i], MAX_PATH_LEN - 1); // Copy the path
         node->path[MAX_PATH_LEN - 1] = '\0';
+        // Update the path and name and the size of the file if it was compressed   
+        if (gzip && S_ISREG(st.st_mode)) {
+            char *dot = strrchr(node->name, '.');
+            if (dot != NULL && strcmp(dot, ".gz") == 0) {
+                *dot = '\0';    // Remove the .gz extension
+            }
+            snprintf(node->path, MAX_PATH_LEN, "%s.gz", fileList[i]);
+            strncpy(node->name, basename(node->path), MAX_NAME_LEN - 1);
+
+            struct stat gzSt;
+            if (stat(node->path, &gzSt) == 0) {
+                node->stat.st_size = gzSt.st_size;
+            }
+        }
+
         node->type = S_ISDIR(st.st_mode) ? MYZ_NODE_TYPE_DIR : MYZ_NODE_TYPE_FILE;  // Set the type
         node->data_offset = 0;    // This will be set later
         node->dirContents = (node->type == MYZ_NODE_TYPE_DIR) ? 0 : -1; // Set the number of directory contents
+        node->compressed = gzip;
 
         // Add the file size to the total bytes
         if (node->type == MYZ_NODE_TYPE_FILE)
@@ -293,9 +370,6 @@ void extract_file(int fd, MyzNode *file_entry, const char *basePath) {
         cleanFilePath += 2;
     }
 
-    // Print the original archive path
-    printf("'%s' original archive path: '%s'\n", cleanFilePath, file_entry->path);
-
     int file_fd = open(filePath, O_WRONLY | O_CREAT | O_TRUNC, file_entry->stat.st_mode);
 
     lseek(fd, file_entry->data_offset, SEEK_SET);   // Move to the data offset
@@ -311,6 +385,26 @@ void extract_file(int fd, MyzNode *file_entry, const char *basePath) {
         bytesToRead -= bytesRead;
     }
     close(file_fd);
+
+    // Decompress the file if it was compressed
+    if (file_entry->compressed) {
+        pid_t pid = fork();
+        if (pid == -1) {
+            perror("fork");
+            exit(EXIT_FAILURE);
+        } else if (pid == 0) {  // Child
+            execlp("gunzip", "gunzip", filePath, NULL);
+            perror("exec");  // Only if exec fails
+            exit(EXIT_FAILURE);
+        } else {
+            wait(NULL);  // Wait for the child process to finish
+            // Update the size of the decompressed file
+            struct stat st;
+            if (stat(filePath, &st) == 0) {
+                file_entry->stat.st_size = st.st_size;
+            }
+        }
+    }
 }
 
 
