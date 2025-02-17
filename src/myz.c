@@ -671,6 +671,7 @@ void query_archive(char *archiveFile, char **fileList) {
 }
 
 // Function to print the hierarchy of the archive
+// Function to print the hierarchy of the archive with proper indentation
 void print_hierarchy(char *archiveFile) {
     // Open the archive file
     int fd = open(archiveFile, O_RDONLY);
@@ -679,7 +680,7 @@ void print_hierarchy(char *archiveFile) {
         return;
     }
 
-    // Read the header of the archive
+    // Read the header
     MyzHeader header;
     if (read(fd, &header, sizeof(MyzHeader)) != sizeof(MyzHeader)) {
         perror("read");
@@ -687,74 +688,75 @@ void print_hierarchy(char *archiveFile) {
         return;
     }
 
-    // Check if the archive file is valid
+    // Validate archive
     if (strncmp(header.magic, "MYZ", 4) != 0) {
         fprintf(stderr, "Invalid archive file\n");
         close(fd);
         return;
     }
 
-    // Move the file descriptor to the metadata offset
+    // Read metadata
     if (lseek(fd, header.metadata_offset, SEEK_SET) == -1) {
         perror("lseek");
         close(fd);
         return;
     }
 
-    // Read the list of archive entries
+    // Load entries into a list
     List list = list_create(NULL);
     MyzNode entry;
     while (read(fd, &entry, sizeof(MyzNode)) == sizeof(MyzNode)) {
         MyzNode *node = malloc(sizeof(MyzNode));
-        memset(node, 0, sizeof(MyzNode)); // Initialize memory to zero
         *node = entry;
-
         list_insert_after(list, list_last(list), node);
     }
 
-    // Print the hierarchy of the archive
+    // Print the hierarchy
     printf("=== Archive Hierarchy ===\n");
     ListNode current = list_first(list);
+    int depth = 0;
+
+    // Stack to track directory contexts
+    char *parent_dirs[100];  // Adjust size as needed
+    int stack_top = -1;
+
     while (current != NULL) {
-        MyzNode *current_entry = list_value(current);
-        int depth = 0;
+        MyzNode *node = list_value(current);
 
-        // Print the hierarchy
-        while (current_entry->type == MYZ_NODE_TYPE_DIR) {
-            for (int i = 0; i < depth; i++) {
-                printf("  ");
-            }
-            printf("%s/\n", current_entry->name);
-
-            // Move to the next entry
-            current = list_next(current);
-            if (current == NULL) break;
-            current_entry = list_value(current);
-            depth++;
+        // Check if we're exiting a directory
+        while (stack_top >= 0 && strncmp(node->path, parent_dirs[stack_top], strlen(parent_dirs[stack_top])) != 0) {
+            // Pop the stack and decrease depth
+            stack_top--;
+            depth--;
         }
 
-        // Print the file
+        // Print indentation based on depth
         for (int i = 0; i < depth; i++) {
-            printf("  ");
+            printf("│   ");  // Use "│   " for visual hierarchy
         }
-        printf("%s\n", current_entry->name);
 
-        // Move to the next entry
+        // Print directory or file
+        if (node->type == MYZ_NODE_TYPE_DIR) {
+            printf("├── %s/\n", node->name);
+            // Push the current directory to the stack
+            stack_top++;
+            parent_dirs[stack_top] = node->path;
+            depth++;  // Increase depth for children
+        } else {
+            printf("├── %s\n", node->name);
+        }
+
+        // Move to next node
         current = list_next(current);
     }
 
-    // Close the archive file
+    // Cleanup
     close(fd);
-
-    // Free dynamically allocated memory
     ListNode node = list_first(list);
     while (node != NULL) {
-        MyzNode *entry = list_value(node);
-        free(entry);
+        free(list_value(node));
         node = list_next(node);
     }
-
-    // Destroy the list
     list_destroy(list);
 }
 
