@@ -4,7 +4,8 @@
         "common.h": "c",
         "limits.h": "c",
         "stdio.h": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "export": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

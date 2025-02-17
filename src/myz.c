@@ -212,7 +212,7 @@ void compress_files_recursive(char *path) {
             perror("fork");
             exit(EXIT_FAILURE);
         } else if (pid == 0) {  // Child
-            execlp("gzip", "gzip", "-k", path, NULL);
+            execlp("gzip", "gzip", path, NULL);
             perror("exec");  // Only if exec fails
             exit(EXIT_FAILURE);
         } else {
