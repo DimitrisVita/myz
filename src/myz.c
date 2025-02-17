@@ -2,8 +2,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <sys/wait.h>  // Προσθήκη αυτής της γραμμής
-#include <dirent.h>  // Προσθήκη αυτής της γραμμής
+#include <sys/wait.h>
+#include <dirent.h>
 
 // Function to transfer the list of archive entries to the archive file
 int transferListToFile(MyzHeader header, List list, char *archiveFile) {
