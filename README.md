@@ -1,4 +1,4 @@
-# OS PROJECT 4: MYZ ARCHIVER
+MYZ ARCHIVER
 
 ## Description
 
